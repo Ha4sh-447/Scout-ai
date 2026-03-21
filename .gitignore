@@ -1,0 +1,27 @@
+# Environments
+.venv
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Logs
+*.log
+
+# Data
+data/
+
+# Tests
+local_tests/
+test_*.py
+verify_multi_resume.py
+
+# Project specific
+clear_qdrant.py
+
+# Subprojects
+mcp-server-qdrant/
+
