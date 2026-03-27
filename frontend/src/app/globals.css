@@ -1,0 +1,68 @@
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap");
+@import "tailwindcss";
+
+:root {
+  --background: #09090b; /* Zinc 950 */
+  --foreground: #fafafa; /* Zinc 50 */
+  --card: #141417;
+  --card-border: rgba(255, 255, 255, 0.04);
+  --primary: #10b981; /* Emerald 500 */
+  --primary-glow: rgba(16, 185, 129, 0.08);
+  --secondary: #18181b; /* Zinc 900 */
+  --muted: #71717a; /* Zinc 500 */
+  --radius: 14px;
+}
+
+@theme {
+  --color-primary: var(--primary);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'Outfit', sans-serif;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+}
+
+.glass {
+  background: rgba(20, 20, 23, 0.5);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--card-border);
+}
+
+.hero-gradient {
+  background: radial-gradient(
+    circle at 50% -10%,
+    var(--primary-glow) 0%,
+    transparent 60%
+  );
+}
+
+.border-reveal {
+  position: relative;
+  overflow: hidden;
+}
+
+.border-reveal::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 40%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+::selection {
+  background: rgba(16, 185, 129, 0.2);
+  color: #fff;
+}
