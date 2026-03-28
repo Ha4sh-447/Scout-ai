@@ -1,6 +1,39 @@
-version: "3.9"
-
 services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: job_finder_api
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://harsh:Harsh%40%241711@db:5432/job_agent"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      QDRANT_URL: "http://qdrant:6333"
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY}
+      LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2}
+      LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT}
+      DEVELOPMENT_MODE: ${DEVELOPMENT_MODE}
+      EMAIL_SENDER: ${EMAIL_SENDER}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD}
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST}
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT}
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./data/resumes:/app/data/resumes
+
   qdrant:
     image: qdrant/qdrant
     container_name: qdrant
@@ -10,7 +43,12 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
-
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
   mcp-server:
     build:
       context: ./mcp-server-qdrant
@@ -29,14 +67,20 @@ services:
     image: postgres:18-alpine
     container_name: job_finder_db
     environment: 
-      POSTGRES_USER: harsh
-      POSTGRES_PASSWORD: [PASSWORD]
-      POSTGRES_DB: job_agent
+      POSTGRES_USER: ${DB_USER:-harsh}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-job_agent}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-harsh} -d ${DB_NAME:-job_agent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
   
   redis:
     image: redis:7-alpine
@@ -44,6 +88,43 @@ services:
     ports:
       - "6379:6379"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    container_name: job_finder_celery
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    environment:
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      DATABASE_URL: "postgresql+asyncpg://harsh:Harsh%40%241711@db:5432/job_agent"
+      QDRANT_URL: "http://qdrant:6333"
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY}
+      LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2}
+      LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT}
+      DEVELOPMENT_MODE: ${DEVELOPMENT_MODE}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      EMAIL_SENDER: ${EMAIL_SENDER}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD}
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST}
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT}
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./data/resumes:/app/data/resumes
 
 volumes:
   qdrant_data:
