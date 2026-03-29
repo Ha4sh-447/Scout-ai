@@ -100,8 +100,8 @@ class RankingConfig(BaseModel):
             )
 
 class EmailConfig(BaseModel):
-    smtp_host: str = Field(default = "")  # Leave empty - user must configure (gmail, outlook, etc)
-    smtp_port: int = Field(default=587)
+    smtp_host: str = Field(default="smtp.gmail.com") 
+    smtp_port: int = Field(default=587) 
     sender_email: str | None = None
     sender_password: str | None = None
     recipient_email: str | None = None

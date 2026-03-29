@@ -98,10 +98,10 @@ MISTRAL_API_KEY=your_key_here
 QDRANT_API_KEY=your_key_here (optional)
 
 # Database
-DATABASE_URL=postgresql+asyncpg://harsh:password@localhost:5432/job_agent
-DB_USER=harsh
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:5432/<db_name>
+DB_USER=<user>
 DB_PASSWORD=your_password
-DB_NAME=job_agent
+DB_NAME=<db_name>
 
 # Qdrant Vector DB
 QDRANT_URL=http://localhost:6333
@@ -190,7 +190,7 @@ If migrations fail with "cannot connect to database":
 
 3. Test connection:
    ```bash
-   psql -h localhost -U harsh -d job_agent
+   psql -h localhost -U <user> -d <db_name>
    ```
 
 ### Alembic Migration Issues
@@ -206,7 +206,7 @@ PYTHONPATH=../.. alembic current
 PYTHONPATH=../.. alembic history
 
 # Reset and re-run (destructive)
-psql -h localhost -U harsh -d job_agent -c "DELETE FROM alembic_version;"
+psql -h localhost -U <user> -d <db_name> -c "DELETE FROM alembic_version;"
 PYTHONPATH=../.. alembic upgrade head
 ```
 

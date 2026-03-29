@@ -22,4 +22,7 @@ ENV PYTHONPATH=/app:$PYTHONPATH
 
 EXPOSE 8001
 
-CMD ["sh", "-c", "python scripts/init_db.py && uvicorn api.main:app --host 0.0.0.0 --port 8001"]
+# Make startup script executable and set as entrypoint
+RUN chmod +x /app/scripts/wait_and_migrate.sh
+
+CMD ["/bin/bash", "/app/scripts/wait_and_migrate.sh"]

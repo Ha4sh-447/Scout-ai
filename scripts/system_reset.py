@@ -32,7 +32,7 @@ def reset_database(force=False):
         # Get database URL
         db_url = os.getenv("DATABASE_URL")
         if not db_url:
-            db_user = os.getenv("DB_USER", "harsh")
+            db_user = os.getenv("DB_USER", "")
             db_password = os.getenv("DB_PASSWORD", "")
             db_name = os.getenv("DB_NAME", "job_agent")
             db_url = f"postgresql://{db_user}:{db_password}@db:5432/{db_name}"

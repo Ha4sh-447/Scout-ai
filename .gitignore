@@ -29,19 +29,6 @@ verify_multi_resume.py
 
 mcp-server-qdrant/
 
-# Development & temporary documentation
-BROWSER_SESSION_AUTH_INTEGRATION.md
-HEADLESS_BROWSER_INTEGRATION.md
-OPERATIONS.md
-qdrant_start.md
-SCHEDULER_TEST.md
-CHANGES_SUMMARY.md
-DATABASE_PERSISTENCE_FIX.md
-DATABASE_PERSISTENCE_QUICK_FIX.md
-DOCKER_IMPROVEMENTS.md
-FREE_WORKAROUNDS_IMPLEMENTATION.md
-PROJECT_ARCHITECTURE.md
-SCHEDULER_AUDIT.md
 project_architecture.png
 .env.backup
 backups/

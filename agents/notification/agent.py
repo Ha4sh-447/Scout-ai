@@ -44,30 +44,57 @@ async def notification_node(state: NotificationState) -> dict:
                 "status": "notification_failed"
                 }
 def _send_email(cfg: EmailConfig, run_label: str, html_body: str) -> None:
+    """Send email via SMTP with detailed error handling."""
     subject = f"{cfg.subject_prefix} {run_label}"
     
-    # Create MIME message
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = cfg.sender_email
-    msg["To"] = cfg.recipient_email
-    
-    # Attach HTML content
-    html_part = MIMEText(html_body, "html")
-    msg.attach(html_part)
-    
-    # Connect to SMTP server with STARTTLS
-    server = smtplib.SMTP(cfg.smtp_host, cfg.smtp_port)
-    server.starttls()
-    
-    # Authenticate with sender email and password
-    server.login(cfg.sender_email, cfg.sender_password)
-    
-    # Send the email
-    server.sendmail(cfg.sender_email, cfg.recipient_email, msg.as_string())
-    
-    # Close connection
-    server.quit()
+    try:
+        # Validate configuration
+        if not cfg.smtp_host:
+            raise ValueError("SMTP host is empty. Set EMAIL_SMTP_HOST in environment")
+        if not cfg.sender_email:
+            raise ValueError("Sender email is empty. Set EMAIL_SENDER in environment")
+        if not cfg.sender_password:
+            raise ValueError("Sender password is empty. Set EMAIL_PASSWORD in environment")
+        if not cfg.recipient_email:
+            raise ValueError("Recipient email is not configured")
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = cfg.sender_email
+        msg["To"] = cfg.recipient_email
+        
+        html_part = MIMEText(html_body, "html")
+        msg.attach(html_part)
+        
+        logger.info(f"[_send_email] Connecting to SMTP server {cfg.smtp_host}:{cfg.smtp_port}")
+        
+        server = smtplib.SMTP(cfg.smtp_host, cfg.smtp_port)
+        server.starttls()
+        
+        logger.info(f"[_send_email] Authenticating as {cfg.sender_email}")
+        
+        server.login(cfg.sender_email, cfg.sender_password)
+        
+        logger.info(f"[_send_email] Sending email to {cfg.recipient_email}")
+        
+        server.sendmail(cfg.sender_email, cfg.recipient_email, msg.as_string())
+        
+        server.quit()
+        
+        logger.info(f"[_send_email] Email sent successfully to {cfg.recipient_email}")
+        
+    except smtplib.SMTPAuthenticationError as e:
+        error_msg = f"SMTP Authentication failed: {str(e)}. Check EMAIL_SENDER and EMAIL_PASSWORD"
+        logger.error(f"[_send_email] {error_msg}")
+        raise Exception(error_msg) from e
+    except smtplib.SMTPException as e:
+        error_msg = f"SMTP connection error: {str(e)}. Check EMAIL_SMTP_HOST ({cfg.smtp_host}) and EMAIL_SMTP_PORT ({cfg.smtp_port})"
+        logger.error(f"[_send_email] {error_msg}")
+        raise Exception(error_msg) from e
+    except Exception as e:
+        error_msg = f"Email send failed: {str(e)}"
+        logger.error(f"[_send_email] {error_msg}")
+        raise Exception(error_msg) from e
  
 def _build_html(jobs: list[MatchedJob], run_label: str) -> str:
     job_cards = "\n".join(_job_card(job) for job in jobs)

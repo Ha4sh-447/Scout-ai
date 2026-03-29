@@ -215,6 +215,8 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
             if settings.notification_email:
                 try:
                     email_cfg = EmailConfig(
+                        smtp_host=os.environ.get("EMAIL_SMTP_HOST", "smtp.gmail.com"),
+                        smtp_port=int(os.environ.get("EMAIL_SMTP_PORT", "587")),
                         sender_email=os.environ["EMAIL_SENDER"],
                         sender_password=os.environ["EMAIL_PASSWORD"],
                         recipient_email=settings.notification_email,
@@ -269,8 +271,6 @@ async def _finish_run(
         run.jobs_ranked = jobs_ranked
         run.completed_at = datetime.utcnow()   # naive UTC — matches TIMESTAMP WITHOUT TIME ZONE
         
-        # ALWAYS mark as done after execution
-        # Scheduler will pick up scheduled runs and create new ones when interval passes
         run.status = "done"
         
         logger.info(f"[_finish_run] Run {run_id} marked as done. is_scheduled={run.is_scheduled}, interval={run.interval_hours}h")
