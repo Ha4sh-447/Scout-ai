@@ -264,6 +264,86 @@ async def _scrape_wellfound_job_details(page: Page, url: str) -> dict:
         return {}
 
 
+async def _scrape_linkedin_job_details(page: Page, url: str) -> dict:
+    """Visit a LinkedIn job page and extract recruiter info."""
+    import random
+    await page.wait_for_timeout(random.randint(2000, 5000))
+    
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=20_000)
+        await page.wait_for_timeout(1000)
+        
+        recruiter_name = None
+        recruiter_email = None
+        recruiter_link = None
+        
+        # LinkedIn: Look for "Posted by" or company recruiter info
+        # Check for recruiter name in job details section
+        recruiter_container = await page.query_selector('[class*="posted"], [class*="recruiter"]')
+        if recruiter_container:
+            recruiter_name = (await recruiter_container.inner_text()).strip()
+        
+        # Look for LinkedIn profile links
+        profile_link = await page.query_selector('a[href*="/in/"], a[href*="/company/"]')
+        if profile_link:
+            recruiter_link = await profile_link.get_attribute("href")
+        
+        # Extract email from page text if available
+        page_text = await page.inner_text("body")
+        email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', page_text)
+        if email_match:
+            recruiter_email = email_match.group(0)
+        
+        return {
+            "recruiter_name": recruiter_name,
+            "recruiter_email": recruiter_email,
+            "recruiter_link": recruiter_link
+        }
+    except Exception as e:
+        logger.warning(f"[listing_scraper] LinkedIn detail scrape failed for {url}: {e}")
+        return {}
+
+
+async def _scrape_indeed_job_details(page: Page, url: str) -> dict:
+    """Visit an Indeed job page and extract recruiter info."""
+    import random
+    await page.wait_for_timeout(random.randint(2000, 5000))
+    
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=20_000)
+        await page.wait_for_timeout(1000)
+        
+        recruiter_name = None
+        recruiter_email = None
+        recruiter_link = None
+        
+        # Indeed: Look for company/recruiter contact info
+        # Check in "About this company" or contact sections
+        company_contact = await page.query_selector('[class*="contact"], [class*="company"]')
+        if company_contact:
+            recruiter_name = (await company_contact.inner_text()).strip()
+        
+        # Look for email addresses in the job posting
+        page_text = await page.inner_text("body")
+        email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', page_text)
+        if email_match:
+            recruiter_email = email_match.group(0)
+        
+        # Look for phone contact
+        phone_link = await page.query_selector("a[href*='tel:']")
+        if phone_link:
+            recruiter_link = await phone_link.get_attribute("href")
+        
+        return {
+            "recruiter_name": recruiter_name,
+            "recruiter_email": recruiter_email,
+            "recruiter_link": recruiter_link
+        }
+    except Exception as e:
+        logger.warning(f"[listing_scraper] Indeed detail scrape failed for {url}: {e}")
+        return {}
+
+
 async def _extract_glassdoor_cards(page: Page, max_cards: int = 30) -> list[dict]:
     """Extract job cards from Glassdoor search results."""
     cards = await page.query_selector_all(".JobCard_jobCardContainer__arQlW")
@@ -352,8 +432,18 @@ async def scrape_listing_page(
 
         cards = await extract_fn(page, max_cards=max_cards)
         
-        # Wellfound specific: Detailed scrape for each card to get recruiter/salary
-        if platform == "wellfound" and cards:
+        # Extract recruiter details for each platform
+        if platform == "linkedin" and cards:
+            logger.info(f"[listing_scraper] LinkedIn: starting recruiter detail scrape for {len(cards)} jobs")
+            for card in cards:
+                details = await _scrape_linkedin_job_details(page, card["link"])
+                card.update(details)
+        elif platform == "indeed" and cards:
+            logger.info(f"[listing_scraper] Indeed: starting recruiter detail scrape for {len(cards)} jobs")
+            for card in cards:
+                details = await _scrape_indeed_job_details(page, card["link"])
+                card.update(details)
+        elif platform == "wellfound" and cards:
             logger.info(f"[listing_scraper] Wellfound: starting detailed scrape for {len(cards)} jobs")
             for card in cards:
                 details = await _scrape_wellfound_job_details(page, card["link"])

@@ -1,9 +1,10 @@
 """
 Cross-run seen-jobs persistence.
 
-Stores content hashes of previously scraped jobs in a JSON file.
+Stores source URLs of previously scraped raw jobs in a JSON file.
 On future runs, jobs already in the store are filtered out so the user
-only sees new listings. Entries older than 30 days are auto-pruned.
+only sees new listings. Works with RawJobData before parsing for efficient comparison.
+Entries older than 30 days are auto-pruned.
 """
 
 import json
@@ -11,7 +12,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from models.jobs import Job
+from models.jobs import RawJobData
 
 logger = logging.getLogger(__name__)
 
@@ -50,39 +51,89 @@ def _prune_old_entries(store: dict) -> dict:
     return pruned
 
 
-def filter_new_jobs(jobs: list[Job], seen_path: str) -> list[Job]:
+def filter_new_raw_jobs(raw_jobs: list[RawJobData], seen_path: str) -> list[RawJobData]:
     """
-    Filter out jobs that were already scraped in previous runs.
-    Returns only jobs whose content_hash is not in the seen store.
+    Filter out raw jobs already scraped in previous runs.
+    Uses source_url as the unique key for comparison.
+    Returns only raw jobs whose source_url is not in the seen store.
+    
+    This filtering happens BEFORE parsing, saving expensive LLM calls.
+    """
+    store = _load_store(seen_path)
+    store = _prune_old_entries(store)
+
+    new_raw_jobs = []
+    for raw_job in raw_jobs:
+        url_key = raw_job.source_url.lower().strip()
+        if url_key not in store:
+            new_raw_jobs.append(raw_job)
+
+    skipped = len(raw_jobs) - len(new_raw_jobs)
+    if skipped > 0:
+        logger.info(f"[seen_jobs] Filtered out {skipped} previously seen raw jobs (by source_url)")
+
+    return new_raw_jobs
+
+
+def mark_seen_raw_jobs(raw_jobs: list[RawJobData], seen_path: str) -> None:
+    """
+    Mark raw jobs as seen by storing their source URLs in the seen store.
+    This approach is simpler and faster than parsing-based comparison.
+    """
+    store = _load_store(seen_path)
+    now = datetime.now().isoformat()
+
+    for raw_job in raw_jobs:
+        url_key = raw_job.source_url.lower().strip()
+        if url_key not in store:
+            store[url_key] = {
+                "url": raw_job.source_url,
+                "platform": raw_job.source_platform,
+                "first_seen": now,
+            }
+
+    _save_store(seen_path, store)
+    logger.info(f"[seen_jobs] Raw job store now has {len(store)} entries (saved to {seen_path})")
+
+
+# Keep legacy parsed job functions for backward compatibility
+def filter_new_jobs(jobs, seen_path: str):
+    """
+    Legacy: Filter parsed jobs against the seen store.
+    Now uses raw job keys internally, but accepts parsed Job objects.
     """
     store = _load_store(seen_path)
     store = _prune_old_entries(store)
 
     new_jobs = []
     for job in jobs:
-        if job.content_hash and job.content_hash in store:
-            continue
-        new_jobs.append(job)
+        # For parsed jobs, we try to match by URL if available, otherwise skip
+        url_key = getattr(job, 'source_url', '').lower().strip() if hasattr(job, 'source_url') else None
+        if url_key and url_key not in store:
+            new_jobs.append(job)
 
     skipped = len(jobs) - len(new_jobs)
     if skipped > 0:
-        logger.info(f"[seen_jobs] Filtered out {skipped} previously seen jobs")
+        logger.info(f"[seen_jobs] Filtered out {skipped} previously seen parsed jobs")
 
     return new_jobs
 
 
-def mark_seen(jobs: list[Job], seen_path: str) -> None:
+def mark_seen(jobs, seen_path: str) -> None:
     """
-    Mark jobs as seen by saving their content hashes to the store.
+    Legacy: Mark parsed jobs as seen.
+    Now uses raw job approach (source_url as key).
     """
     store = _load_store(seen_path)
     now = datetime.now().isoformat()
 
     for job in jobs:
-        if job.content_hash and job.content_hash not in store:
-            store[job.content_hash] = {
-                "title": job.title,
-                "company": job.company,
+        # Try to use source_url if available
+        url_key = getattr(job, 'source_url', '').lower().strip() if hasattr(job, 'source_url') else None
+        if url_key and url_key not in store:
+            store[url_key] = {
+                "url": url_key,
+                "title": getattr(job, 'title', ''),
                 "first_seen": now,
             }
 

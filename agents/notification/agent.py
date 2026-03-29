@@ -3,7 +3,9 @@ from datetime import timezone
 from models.resume import MatchedJob
 from models.config import EmailConfig
 from agents.notification.state import NotificationState
-import yagmail
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import logging
 logger = logging.getLogger(__name__)
 
@@ -44,15 +46,32 @@ async def notification_node(state: NotificationState) -> dict:
 def _send_email(cfg: EmailConfig, run_label: str, html_body: str) -> None:
     subject = f"{cfg.subject_prefix} {run_label}"
     
-    yag = yagmail.SMTP(
-            user = cfg.sender_email,
-            password = cfg.sender_password
-            )
-    yag.send(
-            to= cfg.recipient_email,
-            subject = subject, 
-            contents = html_body
-            )
+    # Create MIME message
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = cfg.sender_email
+    msg["To"] = cfg.recipient_email
+    
+    # Attach HTML content
+    html_part = MIMEText(html_body, "html")
+    msg.attach(html_part)
+    
+    # Connect to SMTP server with STARTTLS
+    server = smtplib.SMTP(cfg.smtp_host, cfg.smtp_port)
+    server.starttls()
+    
+    # For Resend SMTP, username is 'resend' and password is the API key
+    # For other providers, adjust as needed
+    if "resend" in cfg.smtp_host:
+        server.login("resend", cfg.sender_password)
+    else:
+        server.login(cfg.sender_email, cfg.sender_password)
+    
+    # Send the email
+    server.sendmail(cfg.sender_email, cfg.recipient_email, msg.as_string())
+    
+    # Close connection
+    server.quit()
  
 def _build_html(jobs: list[MatchedJob], run_label: str) -> str:
     job_cards = "\n".join(_job_card(job) for job in jobs)

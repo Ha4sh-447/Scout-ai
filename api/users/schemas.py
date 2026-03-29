@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import datetime
 from pydantic import BaseModel, EmailStr
 
 
@@ -8,7 +9,6 @@ class SettingsUpdate(BaseModel):
     location: Optional[str] = None
     resume_summary: Optional[str] = None
     notification_email: Optional[EmailStr] = None
-    is_scheduler_active: Optional[bool] = None
 
 class SettingsResponse(BaseModel):
     interval_hours: int
@@ -16,7 +16,16 @@ class SettingsResponse(BaseModel):
     location: str
     resume_summary: Optional[str]
     notification_email: Optional[str]
-    is_scheduler_active: Optional[bool]
+
+    class Config:
+        from_attributes = True
+
+class UserResumeResponse(BaseModel):
+    id: str
+    file_name: str
+    file_size: int
+    is_active: bool
+    created_at: datetime
 
     class Config:
         from_attributes = True

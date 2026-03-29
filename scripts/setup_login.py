@@ -23,7 +23,15 @@ async def setup():
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
             headless=False,  # visible window so user can log in
-            args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+            args=[
+                "--no-sandbox",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-infobars",
+                "--hide-scrollbars",
+                "--disable-web-resources",
+                "--disable-features=VizDisplayCompositor",
+                "--disable-site-isolation-trials",
+            ],
         )
         context = await browser.new_context(
             user_agent=(
@@ -32,6 +40,12 @@ async def setup():
                 "Chrome/120.0.0.0 Safari/537.36"
             ),
             viewport={"width": 1280, "height": 800},
+            locale="en-US",
+            timezone_id="UTC",
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
         )
         page = await context.new_page()
 

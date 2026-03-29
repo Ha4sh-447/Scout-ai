@@ -4,7 +4,7 @@ import re
 
 from mistralai.client.sdk import Mistral
 
-from models.jobs import Job
+from models.jobs import Job, RawJobData
 
 
 def compute_content_hash(job: Job) -> str:
@@ -25,7 +25,6 @@ def deduplicate_jobs(
     Args:
         jobs: list of parsed Job objects
         seen_hashes: optional set of hashes already processed in previous runs
-                     (pass from Redis cache in production)
 
     Returns:
         (unique_jobs, updated_seen_hashes)
@@ -48,11 +47,32 @@ def deduplicate_jobs(
 
 def deduplicate_within_batch(jobs: list[Job]) -> list[Job]:
     """
-    Simpler version — just dedup within a single batch, no external state.
+    Dedup within a single batch without external state.
     Good for the graph node where you don't have Redis yet.
     """
     unique, _ = deduplicate_jobs(jobs)
     return unique
+
+
+def deduplicate_raw_jobs(raw_jobs: list[RawJobData]) -> list[RawJobData]:
+    """
+    Deduplicate raw job data before parsing.
+    Uses source_url as the primary key (each URL should be a unique job posting).
+    """
+    if not raw_jobs:
+        return []
+    
+    seen_urls = set()
+    unique_raw_jobs = []
+    
+    for raw_job in raw_jobs:
+        url_key = raw_job.source_url.lower().strip()
+        
+        if url_key not in seen_urls:
+            seen_urls.add(url_key)
+            unique_raw_jobs.append(raw_job)
+    
+    return unique_raw_jobs
 
 
 async def semantic_deduplicate(jobs: list[Job]) -> list[Job]:

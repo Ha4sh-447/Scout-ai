@@ -32,12 +32,18 @@ class PipelineRunResponse(BaseModel):
     user_id: str
     triggered_by: str
     status: str
+    execution_count: int = 1
     jobs_found: int
     jobs_matched: int
     jobs_ranked: int
     error_message: Optional[str] = None
     started_at: datetime
     completed_at: Optional[datetime] = None
+    notification_email: Optional[str] = None  # Receiver's mail ID
+    total_jobs_ranked: Optional[int] = None  # Aggregate across all executions
+    active_duration_minutes: Optional[int] = None  # Minutes since first execution
+    is_scheduled: bool = False  # Whether this pipeline is scheduled for recurring runs
+    interval_hours: int = 3  # Scheduling interval for this run
 
     class Config:
         from_attributes = True
@@ -45,3 +51,14 @@ class PipelineRunResponse(BaseModel):
 class TriggerResponse(BaseModel):
     run_id: str
     message: str
+
+class TriggerPipelineRequest(BaseModel):
+    # Search parameters
+    queries: List[str] = []  # Search queries for job discovery
+    location: Optional[str] = None  # Job location filter
+    experience: Optional[str] = None  # User experience level
+    urls: List[str] = []  # Direct URLs to scrape
+    # Scheduling parameters
+    is_scheduled: bool = False  # Whether to schedule this pipeline for recurring runs
+    interval_hours: int = 3  # Scheduler interval for this specific run (only if is_scheduled=True)
+

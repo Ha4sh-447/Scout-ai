@@ -1,20 +1,43 @@
-pydantic
-langchain
-langgraph
-langchain-mistralai
-python-dotenv
-playwright
-asyncio
-html2text
-asyncpg
-sqlalchemy
-celery
-psycopg2
-apscheduler
+# Core Framework & Web
 fastapi
 uvicorn
 python-multipart
+
+# Database & ORM
+sqlalchemy
+asyncpg
+psycopg2-binary
+alembic
+
+# Task Queue & Scheduler
+celery
+redis
+apscheduler
+
+# Authentication & Security
 python-jose[cryptography]
 passlib[bcrypt]
 email-validator
-redis
+
+# AI/ML & Embeddings
+langchain
+langgraph
+langchain-mistralai
+mistralai
+qdrant_client
+fastembed
+pydantic
+
+# MCP Server
+fastmcp
+
+# Web Scraping & Browser Automation
+playwright
+httpx
+html2text
+
+# PDF Processing
+pdfplumber
+
+# Configuration & Environment
+python-dotenv

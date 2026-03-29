@@ -1,13 +1,19 @@
 import logging
+from sqlalchemy import select, and_
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from workers.tasks import run_pipeline_task
 from db.models import PipelineRun
 from db.base import AsyncSessionLocal
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
+# Create scheduler with event loop management
 scheduler = AsyncIOScheduler(timezone="UTC")
+
+# Track if recovery has already run this session
+_recovery_complete = False
 
 async def _start_user_pipeline(user_id: str, run_id: str, celery_task_id: str):
     run_pipeline_task.apply_async(
@@ -16,48 +22,179 @@ async def _start_user_pipeline(user_id: str, run_id: str, celery_task_id: str):
     )
     logger.info(f"[Scheduler] Task {celery_task_id} started for user {user_id}: {run_id}")
 
-async def _create_pipeline(user_id: str):
-    from workers.utils import purge_user_tasks
+
+async def _recover_scheduled_pipelines():
+    """
+    Recovery function: On startup, check all existing pipelines in the database.
+    For pipelines with is_scheduled=true and status="done" (or "running") with completed_at set:
+    - Calculate elapsed time since completion
+    - If interval_hours has passed, create and queue a new run
+    
+    This ensures no scheduled pipeline is missed if the app was offline.
+    
+    NOTE: This should only run ONCE on startup, not every check cycle.
+    """
+    global _recovery_complete
+    
+    if _recovery_complete:
+        logger.debug("[Scheduler] Recovery already completed this session, skipping")
+        return
+    
     import uuid
-    celery_task_id = str(uuid.uuid4())
+    from workers.utils import purge_user_tasks
+    
+    logger.info("[Scheduler] Starting recovery check for existing pipelines...")
     
     async with AsyncSessionLocal() as db:
-        #Purge any existing tasks for this user first
-        await purge_user_tasks(db, user_id)
-        
-        #Create the new run with pre-generated task ID
-        run = PipelineRun(
-            user_id=user_id, 
-            triggered_by="scheduler",
-            celery_task_id=celery_task_id
+        result = await db.execute(
+            select(PipelineRun).where(
+                and_(
+                    PipelineRun.is_scheduled == True,
+                    PipelineRun.status == "done",  # ← Only "done", not "running"
+                    PipelineRun.completed_at.isnot(None)
+                )
+            )
         )
-        db.add(run)
-        await db.commit()
-        await db.refresh(run)
-        run_id = run.id
+        scheduled_pipelines = result.scalars().all()
+        
+        if not scheduled_pipelines:
+            logger.info("[Scheduler] Recovery: No scheduled pipelines found in database")
+            _recovery_complete = True
+            return
+        
+        logger.info(f"[Scheduler] Recovery: Found {len(scheduled_pipelines)} scheduled pipeline(s) to check")
+        
+        recovered_count = 0
+        for run in scheduled_pipelines:
+            elapsed = datetime.utcnow() - run.completed_at
+            elapsed_hours = elapsed.total_seconds() / 3600
+            interval_hours = run.interval_hours
+            
+            logger.info(
+                f"[Scheduler] Recovery: Pipeline {run.id} (user: {run.user_id}) - "
+                f"Elapsed: {elapsed_hours:.1f}h, Interval: {interval_hours}h, "
+                f"Last completed: {run.completed_at.isoformat()}"
+            )
+            
+            if elapsed_hours >= interval_hours:
+                logger.info(
+                    f"[Scheduler] Recovery: 🚀 Pipeline {run.id} is due for reschedule "
+                    f"(elapsed {elapsed_hours:.1f}h >= interval {interval_hours}h)"
+                )
+                
+                try:
+                    await purge_user_tasks(db, run.user_id)
+                    
+                    celery_task_id = str(uuid.uuid4())
+                    # IMPORTANT: Keep status as "done" so scheduler can reschedule it again next cycle
+                    # Celery task will change it to "running" when it actually starts
+                    # run.status = "pending"  # ❌ Don't do this - keeps pipeline out of query
+                    run.execution_count = run.execution_count + 1
+                    # Don't update started_at here - let Celery task do it when it actually runs
+                    # run.started_at = datetime.utcnow()  # ❌ Let the task update this
+                    run.celery_task_id = celery_task_id
+                    run.error_message = None
+                    
+                    await db.commit()
+                    await db.refresh(run)
+                    
+                    logger.info(
+                        f"[Scheduler] Recovery: Reset run {run.id} for reexecution "
+                        f"(execution_count now: {run.execution_count})"
+                    )
+                    
+                    await _start_user_pipeline(user_id=run.user_id, run_id=run.id, celery_task_id=celery_task_id)
+                    recovered_count += 1
+                    logger.info(f"[Scheduler] Recovery: Task submitted to Celery for {run.id}")
+                    
+                except Exception as e:
+                    logger.error(f"[Scheduler] Recovery: Failed to reschedule pipeline {run.id}: {e}", exc_info=True)
+                    continue
+        
+        logger.info(f"[Scheduler] Recovery complete: {recovered_count} pipeline(s) rescheduled")
+        _recovery_complete = True
 
-    await _start_user_pipeline(user_id=user_id, run_id=run_id, celery_task_id=celery_task_id)
+
+async def _check_and_reschedule_pipelines():
+    """
+    Check all pipelines marked as scheduled.
+    Only reschedule if:
+    - status == "done" (NOT running - don't interrupt active tasks)
+    - is_scheduled == true
+    - completed_at is set and interval has passed
+    
+    This function is called every 1 minute by the scheduler.
+    """
+    import uuid
+    from workers.utils import purge_user_tasks
+    
+    async with AsyncSessionLocal() as db:
+        # IMPORTANT: Only look for "done" status, NOT "running"
+        # If "running", the task is still executing and should NOT be interrupted
+        result = await db.execute(
+            select(PipelineRun).where(
+                and_(
+                    PipelineRun.is_scheduled == True,
+                    PipelineRun.status == "done",  # ← Only "done", not "running"
+                    PipelineRun.completed_at.isnot(None)
+                )
+            )
+        )
+        scheduled_runs = result.scalars().all()
+        
+        if scheduled_runs:
+            logger.info(f"[Scheduler] Found {len(scheduled_runs)} scheduled pipeline(s) to check for rescheduling")
+        
+        for run in scheduled_runs:
+            next_execution = run.completed_at + timedelta(hours=run.interval_hours)
+            time_until_next = next_execution - datetime.utcnow()
+            
+            logger.info(f"[Scheduler] Pipeline {run.id} (user: {run.user_id}) - Interval: {run.interval_hours}h, Next execution: {next_execution.isoformat()}, Time until next: {time_until_next}")
+            
+            if next_execution <= datetime.utcnow():
+                logger.info(f"[Scheduler] 🚀 Rescheduling pipeline {run.id} for user {run.user_id} (execution #{run.execution_count + 1})")
+                
+                try:
+                    await purge_user_tasks(db, run.user_id)
+                    
+                    celery_task_id = str(uuid.uuid4())
+                    # IMPORTANT: Keep status as "done" so scheduler can continue to find and reschedule it
+                    # Celery task will change it to "running" when it actually starts
+                    # run.status = "pending"  # ❌ Don't do this - breaks scheduler query
+                    run.execution_count = run.execution_count + 1
+                    # Don't update started_at here - let Celery task do it when it actually runs
+                    # run.started_at = datetime.utcnow()  # ❌ Let the task update this
+                    run.celery_task_id = celery_task_id
+                    run.error_message = None
+                    
+                    await db.commit()
+                    await db.refresh(run)
+                    
+                    logger.info(f"[Scheduler] Reset run {run.id} for reexecution (execution_count now: {run.execution_count})")
+                    
+                    # Submit task to Celery
+                    await _start_user_pipeline(user_id=run.user_id, run_id=run.id, celery_task_id=celery_task_id)
+                    logger.info(f"[Scheduler] Task submitted to Celery for {run.id}")
+                    
+                except Exception as e:
+                    logger.error(f"[Scheduler] Failed to reschedule pipeline {run.id}: {e}", exc_info=True)
+                    continue
 
 def _job_id(user_id:str):
     return f"pipeline_{user_id}"
 
 def schedule_user_pipeline(user_id: str, interval_hours: int):
+    """DEPRECATED: This function is now only used for backwards compatibility.
+    Per-pipeline scheduling is now handled by _check_and_reschedule_pipelines()"""
     job_id = _job_id(user_id)
 
     if scheduler.get_job(job_id):
         scheduler.remove_job(job_id)
 
-    scheduler.add_job(
-            _create_pipeline,
-            trigger=IntervalTrigger(interval_hours),
-            id = job_id,
-            args=[user_id],
-            replace_existing=True,
-            misfire_grace_time=300,
-            )
-    logger.info(f"[scheduler] Scheduled user {user_id} for every {interval_hours}")
+    logger.info(f"[scheduler] Scheduled user {user_id} for every {interval_hours} hours (via legacy method)")
 
 def unschedule_user(user_id: str):
+    """DEPRECATED: Per-pipeline scheduling doesn't use this anymore."""
     job_id = _job_id(user_id)
 
     if scheduler.get_job(job_id):
@@ -67,45 +204,26 @@ def unschedule_user(user_id: str):
 # Sync every user
 async def sync_all_users():
     """
-    Load all active users from DB and sync scheduler state.
-    Runs on startup and every 5 minutes to pick up settings changes.
+    DEPRECATED: User-based scheduler is no longer used.
+    Keeping for backwards compatibility only.
     """
-    from db.base import AsyncSessionLocal
-    from db.models import UserSettings
- 
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(UserSettings).where(UserSettings.is_scheduler_active == True)
-        ) 
-        active_settings = result.scalars().all()
- 
-    active_user_ids = {s.user_id for s in active_settings}
- 
-    #Add/update jobs for active users
-    for s in active_settings:
-        await schedule_user(s.user_id, s.interval_hours)
- 
-    # Remove jobs for users who deactivated their scheduler
-    for job in scheduler.get_jobs():
-        if job.id.startswith("pipeline_"):
-            uid = job.id.replace("pipeline_", "")
-            if uid not in active_user_ids:
-                scheduler.remove_job(job.id)
-                logger.info(f"[scheduler] Removed job for inactive user {uid}")
+    logger.info(f"[scheduler] sync_all_users called (legacy method, not used for per-pipeline scheduling)")
 
 
 async def start_scheduler():
+    # Check for scheduled pipelines every 1 minute
     scheduler.add_job(
-            start_scheduler,
-            trigger= IntervalTrigger(minutes=5),
-            id="sync_users",
+            _check_and_reschedule_pipelines,
+            trigger=IntervalTrigger(minutes=1),
+            id="reschedule_pipelines",
             replace_existing=True,
-            )
+    )
 
     scheduler.start()
-    logger(f"[scheduler] Started")
+    logger.info(f"[scheduler] Started")
 
-    await sync_all_users()
+    # Run first check immediately
+    await _check_and_reschedule_pipelines()
 
 
 async def stop_scheduler():

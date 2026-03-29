@@ -165,8 +165,7 @@ async def _chunk_score_job(
         poster_type=job.poster_type.value,
         match_score=round(final_score, 4),   # will be updated in Stage 2
         top_matching_skills=top_skills,
-        recruiter=job.recruiter,
-        posted_at_text=job.posted_at_text,
+        recruiter=job.recruiter.model_dump() if job.recruiter else None,
     )
 
 

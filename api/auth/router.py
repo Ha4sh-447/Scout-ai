@@ -51,3 +51,35 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
             user_id=user.id,
             email= user.email,
             )
+
+@router.post("/sync", response_model=TokenResponse)
+async def sync_oauth_user(body: dict, db: AsyncSession = Depends(get_db)):
+    """Creates or retrieves user based on email, returns access token for OAuth signup"""
+    email = body.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    
+    # Try to find existing user
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    
+    # If user doesn't exist, create new OAuth user
+    if not user:
+        user = User(email=email, hashed_password="oauth_user")
+        db.add(user)
+        await db.flush()
+        
+        # Create default settings for new user
+        settings = UserSettings(user_id=user.id, notification_email=email)
+        db.add(settings)
+        await db.commit()
+    else:
+        await db.commit()
+    
+    await db.refresh(user)
+    
+    return TokenResponse(
+        access_token=create_access_token(user.id),
+        user_id=user.id,
+        email=user.email,
+    )

@@ -45,10 +45,12 @@ def _make_engine():
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=60)
 def run_pipeline_task(self, run_id: str, user_id: str, custom_urls: list[str] = None):
     """Synchronous Celery entry point - runs the async pipeline in a new event loop."""
+    logger.info(f"[task] ⏱️ CELERY TASK STARTED - run_id={run_id}, user_id={user_id}, custom_urls={custom_urls is not None}")
     try:
         asyncio.run(_run_pipeline(run_id, user_id, custom_urls=custom_urls))
+        logger.info(f"[task] ✅ CELERY TASK COMPLETED - run_id={run_id}")
     except Exception as exc:
-        logger.error(f"[task] Pipeline failed for user {user_id}: {exc}")
+        logger.error(f"[task] ❌ Pipeline failed for user {user_id}: {exc}", exc_info=True)
         loop = asyncio.new_event_loop()
         try:
             loop.run_until_complete(_mark_run_failed(run_id, str(exc)))
@@ -63,7 +65,8 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
 
     try:
         async with SessionLocal() as db:
-
+            logger.info(f"[pipeline] 🔄 PIPELINE STARTED for run {run_id} (user {user_id})")
+            
             # Load user
             user_result = await db.execute(select(User).where(User.id == user_id))
             user = user_result.scalar_one_or_none()
@@ -97,6 +100,7 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
             run = run_result.scalar_one_or_none()
             if run:
                 run.status = "running"
+                run.started_at = datetime.utcnow()
                 await db.commit()
 
             logger.info(
@@ -145,7 +149,7 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                 all_jobs = deduplicate_within_batch(all_jobs)
 
             if not all_jobs:
-                await _finish_run(db, run_id, status="done", jobs_found=0)
+                await _finish_run(db, run_id, jobs_found=0)
                 logger.info(f"[pipeline] No new jobs found for run {run_id}")
                 return
 
@@ -160,7 +164,7 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
             matched_jobs = match_result.get("matched_jobs", [])
 
             if not matched_jobs:
-                await _finish_run(db, run_id, status="done", jobs_found=len(all_jobs))
+                await _finish_run(db, run_id, jobs_found=len(all_jobs))
                 logger.info(f"[pipeline] No jobs passed match threshold for run {run_id}")
                 return
 
@@ -228,7 +232,6 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
 
             await _finish_run(
                 db, run_id,
-                status="done",
                 jobs_found=len(all_jobs),
                 jobs_matched=len(matched_jobs),
                 jobs_ranked=len(ranked_jobs),
@@ -246,19 +249,32 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
 async def _finish_run(
     db,
     run_id: str,
-    status: str,
     jobs_found: int = 0,
     jobs_matched: int = 0,
     jobs_ranked: int = 0,
 ):
+    """Update pipeline stats and completion timestamp, then set status to done.
+    
+    IMPORTANT: Always set status to "done" after execution completes.
+    The scheduler will check is_scheduled=True + status="done" + interval_passed
+    to automatically create and run the next execution.
+    
+    Only explicit user cancellation changes status to "cancelled".
+    """
     result = await db.execute(select(PipelineRun).where(PipelineRun.id == run_id))
     run = result.scalar_one_or_none()
     if run:
-        run.status = status
         run.jobs_found = jobs_found
         run.jobs_matched = jobs_matched
         run.jobs_ranked = jobs_ranked
         run.completed_at = datetime.utcnow()   # naive UTC — matches TIMESTAMP WITHOUT TIME ZONE
+        
+        # ALWAYS mark as done after execution
+        # Scheduler will pick up scheduled runs and create new ones when interval passes
+        run.status = "done"
+        
+        logger.info(f"[_finish_run] Run {run_id} marked as done. is_scheduled={run.is_scheduled}, interval={run.interval_hours}h")
+        
         await db.commit()
 
 

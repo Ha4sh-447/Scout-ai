@@ -3,12 +3,13 @@
 from models.config import ResumeMatchingConfig
 from models.config import QdrantConfig
 import logging
+import os
 import re
 
 from agents.job_discovery.state import JobDiscoveryState
-from extractors.deduplicator import deduplicate_within_batch, semantic_deduplicate
+from extractors.deduplicator import deduplicate_within_batch, deduplicate_raw_jobs, semantic_deduplicate
 from extractors.job_parser import parse_jobs_batch
-from extractors.seen_jobs import filter_new_jobs, mark_seen
+from extractors.seen_jobs import filter_new_raw_jobs, mark_seen_raw_jobs
 from models.config import ScraperConfig
 from scrapers.page_loader import load_job_pages
 from tools.browser.browser_manager import BrowserManager
@@ -57,17 +58,79 @@ async def scrape_node(state: JobDiscoveryState) -> dict:
     }
 
 
-# Parse node
-async def parse_node(state: JobDiscoveryState) -> dict:
-    raw_jobs = state.get("raw_jobs", [])
-    logger.info(f"[parse node] Parsing {len(raw_jobs)} raw jobs")
+# Deduplicate Raw Jobs node (BEFORE parsing - dedup first, parse unique only)
+async def deduplicate_raw_node(state: JobDiscoveryState) -> dict:
+    """
+    CRITICAL: This node runs BEFORE parsing to minimize LLM calls.
+    
+    Process:
+    1. Deduplicate raw_jobs by source_url (same URL = same job)
+    2. Filter against seen_jobs store (skip previously scraped URLs)
+    3. Mark filtered jobs as seen immediately
+    
+    Result: Only new, unique raw jobs are stored for parse_node to process.
+    """
+    scraped_raw_jobs = state.get("raw_jobs", [])
+    config = state.get("scraper_config") or ScraperConfig()
+    
+    logger.info(f"[deduplicate_raw node] ===== START RAW DEDUPLICATION =====")
+    logger.info(f"[deduplicate_raw node] Input: {len(scraped_raw_jobs)} scraped raw jobs")
 
-    if not raw_jobs:
+    if not scraped_raw_jobs:
+        logger.info(f"[deduplicate_raw node] No raw jobs to process, skipping")
+        return {"raw_jobs": [], "status": "raw_dedup_done"}
+
+    deduplicated_raw_jobs = deduplicate_raw_jobs(scraped_raw_jobs)
+    batch_dups_removed = len(scraped_raw_jobs) - len(deduplicated_raw_jobs)
+    logger.info(f"[deduplicate_raw node] URL dedup: Removed {batch_dups_removed} duplicates. Remaining: {len(deduplicated_raw_jobs)}")
+
+    unique_raw_jobs_for_parsing = filter_new_raw_jobs(deduplicated_raw_jobs, config.seen_jobs_path)
+    previously_seen = len(deduplicated_raw_jobs) - len(unique_raw_jobs_for_parsing)
+    logger.info(f"[deduplicate_raw node] Seen filter: Filtered {previously_seen} previously seen URLs. Remaining: {len(unique_raw_jobs_for_parsing)}")
+
+    if unique_raw_jobs_for_parsing:
+        mark_seen_raw_jobs(unique_raw_jobs_for_parsing, config.seen_jobs_path)
+        logger.info(f"[deduplicate_raw node] Marked {len(unique_raw_jobs_for_parsing)} unique jobs as SEEN")
+
+    logger.info(f"[deduplicate_raw node] ===== END RAW DEDUPLICATION =====")
+    logger.info(f"[deduplicate_raw node] OUTPUT: {len(unique_raw_jobs_for_parsing)} unique raw jobs → PASS TO PARSE NODE")
+
+    return {
+        "raw_jobs": unique_raw_jobs_for_parsing,  # Only unique raw jobs passed to parse_node
+        "status": "raw_dedup_done",
+    }
+
+
+# Parse node - ONLY processes deduplicated raw jobs from deduplicate_raw_node
+async def parse_node(state: JobDiscoveryState) -> dict:
+    """
+    Parse ONLY the unique raw jobs that passed deduplication.
+    
+    Input: unique_raw_jobs from deduplicate_raw_node (already filtered)
+    Process: LLM-based parsing to extract structured data
+    Output: parsed_jobs ready for final filtering and ranking
+    """
+    unique_raw_jobs = state.get("raw_jobs", [])
+    
+    logger.info(f"[parse node] ===== START PARSING UNIQUE JOBS =====")
+    logger.info(f"[parse node] Input: {len(unique_raw_jobs)} unique raw jobs (already deduplicated)")
+
+    if not unique_raw_jobs:
+        logger.info(f"[parse node] No jobs to parse, returning empty")
         return {"parsed_jobs": [], "status": "parse_done"}
 
-    parsed_jobs, errors = await parse_jobs_batch(raw_jobs)
+    dev_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
+    raw_jobs_to_parse = unique_raw_jobs
+    if dev_mode and len(unique_raw_jobs) > 3:
+        raw_jobs_to_parse = unique_raw_jobs[:3]
+        logger.warning(f"⚠️ DEVELOPMENT MODE: Limiting LLM parsing to {len(raw_jobs_to_parse)} jobs (skipping {len(unique_raw_jobs) - len(raw_jobs_to_parse)} jobs)")
 
-    logger.info(f"[parse node] Parse {len(parsed_jobs)}, {len(errors)} errors")
+    logger.info(f"[parse node] Sending {len(raw_jobs_to_parse)} unique jobs to LLM for parsing...")
+    parsed_jobs, errors = await parse_jobs_batch(raw_jobs_to_parse)
+    
+    logger.info(f"[parse node] ===== END PARSING =====")
+    logger.info(f"[parse node] OUTPUT: {len(parsed_jobs)} successfully parsed, {len(errors)} errors")
+
     return {
         "parsed_jobs": parsed_jobs,
         "errors": errors,
@@ -75,39 +138,38 @@ async def parse_node(state: JobDiscoveryState) -> dict:
     }
 
 
-# DeDuplicate node
+# Final Deduplication & Filtering node (post-parsing)
 async def deduplicate_node(state: JobDiscoveryState) -> dict:
+    """
+    Final filtering stage AFTER parsing.
+    
+    Input: parsed_jobs (already LLM-parsed from unique raw jobs)
+    Process: Semantic dedup + experience/location/recency filtering
+    Output: Final job candidates for matching and ranking
+    
+    NOTE: Raw job deduplication already happened in deduplicate_raw_node,
+    so we only focus on semantic quality and user requirement filtering here.
+    """
     parsed_jobs = state["parsed_jobs"]
     config = state.get("scraper_config") or ScraperConfig()
-    logger.info(f"[deduplication node] DeDuplicating {len(parsed_jobs)} nodes")
+    logger.info(f"[deduplication node] ===== START FINAL FILTERING (POST-PARSE) =====")
+    logger.info(f"[deduplication node] Input: {len(parsed_jobs)} parsed jobs (from deduplicated raw jobs)")
 
     if not parsed_jobs:
+        logger.info(f"[deduplication node] No jobs to filter, returning empty")
         return {"unique_jobs": [], "status": "done"}
 
-    # Hash-based dedup within this batch
     unique_jobs = deduplicate_within_batch(parsed_jobs)
-    logger.info(f"[deduplicate_node] After hash dedup: {len(unique_jobs)} unique jobs")
+    hash_dedup_removed = len(parsed_jobs) - len(unique_jobs)
+    logger.info(f"[deduplication node] Hash dedup (safety check): Removed {hash_dedup_removed} duplicates. {len(unique_jobs)} remain")
 
-    # Semantic dedup (LLM-based)
     if len(unique_jobs) > 5:
         unique_jobs = await semantic_deduplicate(unique_jobs)
-        logger.info(
-            f"[deduplication node] After semantic dedup: {len(unique_jobs)} unique jobs"
-        )
+        logger.info(f"[deduplication node] After semantic dedup: {len(unique_jobs)} unique jobs")
 
-    # Filter out jobs seen in previous runs
-    new_jobs = filter_new_jobs(unique_jobs, config.seen_jobs_path)
-    seen_count = len(unique_jobs) - len(new_jobs)
-    seen_ratio = seen_count / len(unique_jobs) if unique_jobs else 0
-    
-    logger.info(f"[deduplication node] Filtered {seen_count}/{len(unique_jobs)} already-seen jobs ({seen_ratio:.1%})")
-    unique_jobs = new_jobs
-
-    # Experience Filtering (User requirement ±1 year)
     user_exp_str = state.get("experience_level")
     if user_exp_str and unique_jobs:
         u_min, u_max = _parse_exp_years(user_exp_str)
-        # Allowed range ±1 for the min requirement
         allowed_min = max(0, u_min - 1)
         allowed_max = u_max + 1
         
@@ -115,26 +177,19 @@ async def deduplicate_node(state: JobDiscoveryState) -> dict:
         senior_keywords = ["senior", "lead", "mgr", "manager", "staff", "principal", "head", "architect", "vp", "director"]
         
         for job in unique_jobs:
-            # Title check (strict for entry level)
             title = job.title.lower()
             is_senior_title = any(kw in title for kw in senior_keywords)
             
-            # Integer-based experience check
             j_min = job.min_years_experience
-            # Fallback to string parsing if int is missing
             if j_min is None:
                 j_min, _ = _parse_exp_years(job.experience)
             
-            # If user is a total fresher (0-2 range), we strictly exclude Senior titles
-            # Unless the job text explicitly says "Fresher" or "0 years"
             if allowed_max <= 2 and is_senior_title:
                 if "fresher" not in title and (j_min is None or j_min > 2):
                     logger.info(f"[deduplication node] Filtering Senior role {job.title} for entry-level user")
                     continue
 
-            # Hard filter based on min years requirement
             if j_min is not None:
-                # If job requires significantly more than the user's upper range + 1
                 if j_min > allowed_max:
                     logger.info(f"[deduplication node] Filtering {job.title} (Requires {j_min} exp) for user {user_exp_str}")
                     continue
@@ -144,10 +199,7 @@ async def deduplicate_node(state: JobDiscoveryState) -> dict:
         logger.info(f"[deduplication node] After strict experience filter: {len(filtered_jobs)}/{len(unique_jobs)} jobs remain")
         unique_jobs = filtered_jobs
 
-    # Tiered Recency Filter
     retry_count = state.get("retry_count", 0)
-    
-    # Tiered hours: Attempt 0=any, Attempt 1=24h, Attempt 2=15h, Attempt 3=10h
     tier_map = {0: 9999, 1: 24, 2: 15, 3: 10}
     hours_limit = tier_map.get(retry_count, 10)
     
@@ -161,18 +213,14 @@ async def deduplicate_node(state: JobDiscoveryState) -> dict:
     unique_jobs = fresh_jobs
     logger.info(f"[deduplication node] Tier {retry_count} ({hours_limit}h limit): found {len(unique_jobs)} fresh jobs")
 
-    # Adaptive Freshness Check
     current_freshness = state.get("freshness", "default")
     retry_count = state.get("retry_count", 0)
     
-    # Calculate cumulative unique jobs found so far
     total_unique_count = len(state.get("unique_jobs", [])) + len(unique_jobs)
     logger.info(f"[deduplication node] Cumulative unique jobs: {total_unique_count}")
 
-    # If already found 10 unique end the process
     if total_unique_count >= 10:
         logger.info(f"[deduplication node] Threshold met ({total_unique_count} >= 10). Finishing discovery.")
-        mark_seen(unique_jobs, config.seen_jobs_path)
         return {"unique_jobs": unique_jobs, "status": "done"}
 
     if total_unique_count < 10 and retry_count < 3:
@@ -180,16 +228,12 @@ async def deduplicate_node(state: JobDiscoveryState) -> dict:
         
         logger.warning(f"[deduplication node] Need more jobs ({total_unique_count}/10 found). Retrying Tier {retry_count + 1} with {next_freshness}.")
         
-        mark_seen(unique_jobs, config.seen_jobs_path)
         return {
             "unique_jobs": unique_jobs,
             "status": "retry_fresher",
             "freshness": next_freshness,
             "retry_count": retry_count + 1
         }
-
-    # Mark newly discovered jobs as seen
-    mark_seen(unique_jobs, config.seen_jobs_path)
 
     return {"unique_jobs": unique_jobs, "status": "done"}
 
