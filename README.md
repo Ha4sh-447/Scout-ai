@@ -16,9 +16,6 @@ An AI-powered multi-agent job discovery and matching platform that automatically
 - [Database Schema](#-database-schema)
 - [Configuration](#-configuration)
 - [Development & Testing](#-development--testing)
-- [Deployment](#-deployment)
-- [Troubleshooting](#-troubleshooting)
-- [Contributing](#-contributing)
 
 ## ✨ Features
 
@@ -46,7 +43,7 @@ An AI-powered multi-agent job discovery and matching platform that automatically
   - Duplicate detection using content hashing
 
 - **📧 Email Notifications**
-  - Resend API integration for reliable delivery
+  - SMTP integration for reliable email delivery
   - HTML-formatted job digest emails
   - Match score explanations in every email
   - Scheduled batch notifications
@@ -685,10 +682,10 @@ recruiter_weight: float = 0.025        # Direct vs recruiter
 ### EmailConfig
 Email notifications configuration:
 ```python
-smtp_host: str = "smtp.resend.com"
+smtp_host: str  # SMTP server (e.g., smtp.gmail.com, smtp.office365.com)
 smtp_port: int = 587
-sender_email: str  # "scoutai@resend.com"
-sender_password: str  # Resend API key
+sender_email: str  # Sender email address
+sender_password: str  # SMTP password or app-specific password
 use_tls: bool = true
 include_unsubscribe: bool = true
 ```
@@ -780,8 +777,7 @@ Copy `.env.example` to `.env` and configure the following variables:
 ### **Database & Cache**
 ```env
 # PostgreSQL Database
-DATABASE_URL=postgresql+asyncpg://harsh:password@db:5432/job_agent
-DB_USER=harsh
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@db:5432/job_agent
 DB_PASSWORD=your_secure_password
 DB_NAME=job_agent
 
@@ -789,24 +785,40 @@ DB_NAME=job_agent
 REDIS_URL=redis://redis:6379/0
 ```
 
-### **Email Configuration (Resend SMTP)**
+### **Email Configuration (SMTP)**
 ```env
-# Using Resend Service (https://resend.com)
-# Get API key from: https://resend.com/api-keys
-EMAIL_SENDER=scoutai@resend.com
-EMAIL_PASSWORD=re_your_resend_api_key_here    # Your Resend API key
-EMAIL_RECIPIENT=harshsaindane1711@gmail.com   # Default recipient for notifications
-EMAIL_SMTP_HOST=smtp.resend.com
-EMAIL_SMTP_PORT=587
+# SMTP Server Configuration
+# Supports Gmail, Outlook, custom SMTP servers, etc.
+EMAIL_SMTP_HOST=smtp.gmail.com              # Your SMTP server
+EMAIL_SMTP_PORT=587                         # Usually 587 (TLS) or 465 (SSL)
+EMAIL_SENDER=your-email@gmail.com           # Sender email address
+EMAIL_PASSWORD=your_app_password             # SMTP password or app-specific password
 ```
 
-**Testing Email Configuration:**
-```bash
-# Install dependencies first
-pip install -r requirements.txt
+**Example Configurations:**
 
-# Run test email script
-python scripts/test_resend_email.py
+*Gmail (requires App Password):*
+```env
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_PORT=587
+EMAIL_SENDER=your-email@gmail.com
+EMAIL_PASSWORD=your_16_digit_app_password
+```
+
+*Outlook/Office 365:*
+```env
+EMAIL_SMTP_HOST=smtp.office365.com
+EMAIL_SMTP_PORT=587
+EMAIL_SENDER=your-email@outlook.com
+EMAIL_PASSWORD=your_outlook_password
+```
+
+*Custom SMTP Server:*
+```env
+EMAIL_SMTP_HOST=mail.yourdomain.com
+EMAIL_SMTP_PORT=587
+EMAIL_SENDER=noreply@yourdomain.com
+EMAIL_PASSWORD=your_smtp_password
 ```
 
 ### **Vector Database (Qdrant)**
@@ -856,13 +868,13 @@ DEVELOPMENT_MODE=true     # Set to false for production
 ### **Complete Setup Checklist**
 
 - [ ] Copy `.env.example` to `.env`
+- [ ] Set `DATABASE_URL` with your PostgreSQL credentials
 - [ ] Set `DB_PASSWORD` to a strong password
-- [ ] Add your Resend API key to `EMAIL_PASSWORD`
+- [ ] Configure SMTP settings: `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_SENDER`, `EMAIL_PASSWORD`
 - [ ] Set `MISTRAL_API_KEY` for LLM operations
 - [ ] Generate `JWT_SECRET_KEY` and `AUTH_SECRET` (use: `openssl rand -hex 32`)
 - [ ] Configure Google OAuth IDs if using frontend auth
-- [ ] Test email: `python scripts/test_resend_email.py`
-- [ ] Verify database: `python scripts/preflight.py`
+- [ ] Test database: `python scripts/preflight.py`
 
 ## � Pipeline Execution & Scheduling
 
@@ -986,7 +998,7 @@ Formats and sends results to users via email.
 - Unsubscribe option
 
 **Configuration:**
-- Uses Resend API for reliable delivery
+- Uses SMTP for reliable delivery
 - Scheduled batch sending (configurable)
 - Reply-to setup for engagement tracking
 
@@ -1005,185 +1017,3 @@ class AgentState(TypedDict):
     error: str | None               # Error message if failed
 ```
 
-## 🐳 Deployment
-
-### Docker Compose Services
-
-The provided `docker-compose.yml` includes 5 services:
-
-#### **PostgreSQL Database**
-```yaml
-service: db
-container: job_finder_db
-port: 5432
-volumes:
-  - postgres_data:/var/lib/postgresql/data
-healthcheck: pg_isready
-```
-
-**First Run Setup:**
-```bash
-# Migrations run automatically after container is healthy
-alembic upgrade head
-```
-
-#### **Redis**
-```yaml
-service: redis
-container: job_finder_redis
-port: 6379
-purpose: Celery message broker
-healthcheck: redis-cli ping
-```
-
-#### **Qdrant Vector Database**
-```yaml
-service: qdrant
-container: qdrant
-ports: 6333, 6334
-volumes:
-  - qdrant_data:/qdrant/storage
-healthcheck: /health endpoint
-```
-
-**Collections Created:**
-- `resume_chunks`: Stores resume embeddings
-
-#### **Celery Worker**
-```yaml
-service: celery-worker
-container: job_finder_celery
-image: Built from Dockerfile.celery
-depends_on: redis, db, qdrant
-concurrency: 4 workers
-restart: unless-stopped
-```
-
-**Features:**
-- Auto-restart on failure
-- Volume mounts for data persistence
-- Environment variables injected
-- Logging to container logs
-
-#### **MCP Qdrant Server**
-```yaml
-service: mcp-server
-container: qdrant-mcp
-port: 8000
-depends_on: qdrant
-purpose: Model Context Protocol server for Qdrant
-```
-
-### Docker Build & Deployment
-
-```bash
-# Build images
-docker-compose build
-
-# Start all services
-docker-compose up -d
-
-# Check status
-docker-compose ps
-
-# View logs
-docker-compose logs -f celery-worker
-
-# Stop all services
-docker-compose down
-
-# Cleanup (remove volumes - destructive)
-docker-compose down -v
-```
-
-### Production Deployment Checklist
-
-- [ ] Set `DEVELOPMENT_MODE=false` in .env
-- [ ] Update `DATABASE_URL` to production database
-- [ ] Use managed Qdrant instance (Qdrant Cloud)
-- [ ] Configure SSL/TLS certificates
-- [ ] Set strong `JWT_SECRET_KEY` and `AUTH_SECRET`
-- [ ] Configure domain in `NEXTAUTH_URL`
-- [ ] Setup proper logging and monitoring
-- [ ] Configure backup strategy for PostgreSQL
-- [ ] Setup email service with proper SPF/DKIM records
-- [ ] Test end-to-end before going live
-
-### Kubernetes Deployment
-
-For Kubernetes deployment, create:
-
-1. **Deployment manifests** for each service
-2. **ConfigMaps** for configuration
-3. **Secrets** for sensitive data (`DATABASE_URL`, API keys)
-4. **Persistent Volumes** for database and Qdrant storage
-5. **Services** for internal networking
-
-Example:
-```yaml
----
-# PostgreSQL StatefulSet
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: postgres
-spec:
-  serviceName: postgres
-  replicas: 1
-  selector:
-    matchLabels:
-      app: postgres
-  template:
-    # ... pod template with PVC
----
-# Backend Deployment
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: backend
-spec:
-  replicas: 2
-  # ... pod template with FastAPI service
----
-# Celery Worker Deployment
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: celery-worker
-spec:
-  replicas: 3
-  # ... pod template with Celery container
-```
-## �🚀 Performance Optimization Tips
-
-1. **Parallel job discovery**: Increase `batch_size` in ScraperConfig
-2. **Batch embedding**: Process multiple resumes at once
-3. **Cache job listings**: Use deduplicator to avoid re-processing
-4. **Database indexing**: Ensure migrations create proper indexes
-5. **Vector search optimization**: Tune Qdrant distance thresholds
-
-## 🤝 Contributing
-
-1. Create feature branch: `git checkout -b feature/your-feature`
-2. Make changes and test: `python test_scheduler_reschedule.py`
-3. Commit: `git commit -am 'Add feature'`
-4. Push: `git push origin feature/your-feature`
-5. Create Pull Request
-
-## 📄 License
-
-MIT License - See LICENSE file
-
-## 📞 Support
-
-For issues, questions, or contributions:
-- Check existing documentation in `/docs` or this README
-- Review log files in `/data/` directory
-- Run diagnostic scripts: `python scripts/preflight.py`
-
----
-
-**Last Updated**: March 2026  
-**Current Version**: 1.0.0  
-**Python**: 3.12+  
-**Node**: 18+
