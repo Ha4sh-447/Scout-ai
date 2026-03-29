@@ -60,12 +60,8 @@ def _send_email(cfg: EmailConfig, run_label: str, html_body: str) -> None:
     server = smtplib.SMTP(cfg.smtp_host, cfg.smtp_port)
     server.starttls()
     
-    # For Resend SMTP, username is 'resend' and password is the API key
-    # For other providers, adjust as needed
-    if "resend" in cfg.smtp_host:
-        server.login("resend", cfg.sender_password)
-    else:
-        server.login(cfg.sender_email, cfg.sender_password)
+    # Authenticate with sender email and password
+    server.login(cfg.sender_email, cfg.sender_password)
     
     # Send the email
     server.sendmail(cfg.sender_email, cfg.recipient_email, msg.as_string())
