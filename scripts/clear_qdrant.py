@@ -31,10 +31,10 @@ def get_qdrant_client():
     
     try:
         client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
-        print(f"✅ Connected to Qdrant at {qdrant_url}")
+        print(f"[OK] Connected to Qdrant at {qdrant_url}")
         return client
     except Exception as e:
-        print(f"❌ Failed to connect to Qdrant at {qdrant_url}")
+        print(f"[FAILED] Failed to connect to Qdrant at {qdrant_url}")
         print(f"   Error: {e}")
         print(f"   Are Docker services running? Try: docker-compose ps")
         sys.exit(1)
@@ -43,10 +43,10 @@ def clear_collection(client: QdrantClient, collection_name: str):
     """Delete a specific collection"""
     try:
         client.delete_collection(collection_name)
-        print(f"✅ Deleted collection: {collection_name}")
+        print(f"[OK] Deleted collection: {collection_name}")
         return True
     except Exception as e:
-        print(f"❌ Error deleting collection {collection_name}: {e}")
+        print(f"[FAILED] Error deleting collection {collection_name}: {e}")
         return False
 
 def clear_all_collections(client: QdrantClient):
@@ -54,14 +54,14 @@ def clear_all_collections(client: QdrantClient):
     try:
         collections = client.get_collections().collections
         if not collections:
-            print("ℹ️  No collections to delete")
+            print("[INFO] No collections to delete")
             return True
         
         print(f"Found {len(collections)} collections:")
         for collection in collections:
             print(f"  - {collection.name}")
         
-        confirm = input("\n⚠️  Delete ALL collections? (yes/no): ")
+        confirm = input("\n[WARNING] Delete ALL collections? (yes/no): ")
         if confirm.lower() != "yes":
             print("Cancelled.")
             return False
@@ -71,10 +71,10 @@ def clear_all_collections(client: QdrantClient):
             if clear_collection(client, collection.name):
                 deleted_count += 1
         
-        print(f"\n✅ Deleted {deleted_count}/{len(collections)} collections")
+        print(f"\n[OK] Deleted {deleted_count}/{len(collections)} collections")
         return True
     except Exception as e:
-        print(f"❌ Error listing collections: {e}")
+        print(f"[FAILED] Error listing collections: {e}")
         return False
 
 def main():

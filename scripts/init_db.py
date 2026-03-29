@@ -23,7 +23,7 @@ load_dotenv()
 def run_migrations():
     """Run Alembic migrations"""
     try:
-        print("🔄 Running database migrations...")
+        print("[RUNNING] Running database migrations...")
         
         # Change to project root
         os.chdir(project_root)
@@ -37,22 +37,22 @@ def run_migrations():
         )
         
         if result.returncode == 0:
-            print("✅ Database migrations completed successfully")
+            print("[OK] Database migrations completed successfully")
             if result.stdout:
                 print(result.stdout)
             return True
         else:
-            print("❌ Migration failed")
+            print("[FAILED] Migration failed")
             if result.stderr:
                 print(result.stderr)
             return False
             
     except FileNotFoundError:
-        print("❌ Error: alembic not found")
+        print("[FAILED] Error: alembic not found")
         print("   Install with: pip install alembic")
         return False
     except Exception as e:
-        print(f"❌ Error running migrations: {e}")
+        print(f"[FAILED] Error running migrations: {e}")
         return False
 
 def verify_database():
@@ -69,16 +69,16 @@ def verify_database():
             # Use Docker service name 'db' instead of localhost
             db_url = f"postgresql://{db_user}:{db_password}@db:5432/{db_name}"
         
-        print(f"🔍 Testing database connection...")
+        print(f"[CHECK] Testing database connection...")
         engine = create_engine(db_url)
         
         with engine.connect() as connection:
             result = connection.execute(text("SELECT 1"))
-            print("✅ Database connection verified")
+            print("[OK] Database connection verified")
             return True
             
     except Exception as e:
-        print(f"❌ Database connection failed: {e}")
+        print(f"[FAILED] Database connection failed: {e}")
         print(f"   Make sure:")
         print(f"   1. PostgreSQL is running: docker-compose ps db")
         print(f"   2. Database credentials are correct in .env")
@@ -98,7 +98,7 @@ def main():
     if not run_migrations():
         sys.exit(1)
     
-    print("\n✅ Database initialization complete!")
+    print("\n[OK] Database initialization complete!")
     print("   Tables created successfully")
 
 if __name__ == "__main__":

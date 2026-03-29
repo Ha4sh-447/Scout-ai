@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Complete system reset - drop all tables, clear Redis and Qdrant.
-⚠️  DESTRUCTIVE - Use with caution! Deletes all data.
+[WARNING] DESTRUCTIVE - Use with caution! Deletes all data.
 
 Usage:
     python scripts/system_reset.py              # Interactive (asks for confirmation)
@@ -37,7 +37,7 @@ def reset_database(force=False):
             db_name = os.getenv("DB_NAME", "job_agent")
             db_url = f"postgresql://{db_user}:{db_password}@db:5432/{db_name}"
         
-        print("🗑️  Resetting PostgreSQL database...")
+        print("[RESET] Resetting PostgreSQL database...")
         engine = create_engine(db_url)
         
         # Get list of tables
@@ -50,7 +50,7 @@ def reset_database(force=False):
                 print(f"     - {table}")
             
             if not force:
-                confirm = input("\n   ⚠️  Drop all tables? (yes/no): ")
+                confirm = input("\n   [WARNING] Drop all tables? (yes/no): ")
                 if confirm.lower() != "yes":
                     print("   Cancelled.")
                     return False
@@ -59,13 +59,13 @@ def reset_database(force=False):
         with engine.begin() as connection:
             for table in reversed(tables):  # Reverse to respect foreign keys
                 connection.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
-                print(f"   ✅ Dropped table: {table}")
+                print(f"   [OK] Dropped table: {table}")
         
-        print("✅ Database reset complete")
+        print("[OK] Database reset complete")
         return True
         
     except Exception as e:
-        print(f"❌ Database reset failed: {e}")
+        print(f"[FAILED] Database reset failed: {e}")
         return False
 
 def reset_redis(force=False):
@@ -74,7 +74,7 @@ def reset_redis(force=False):
         import redis
         
         redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-        print("🗑️  Resetting Redis...")
+        print("[RESET] Resetting Redis...")
         
         client = redis.from_url(redis_url)
         
@@ -87,19 +87,19 @@ def reset_redis(force=False):
         
         if db_size > 0:
             if not force:
-                confirm = input("   ⚠️  Flush all Redis data? (yes/no): ")
+                confirm = input("   [WARNING] Flush all Redis data? (yes/no): ")
                 if confirm.lower() != "yes":
                     print("   Cancelled.")
                     return False
             
             client.flushdb()
-            print("   ✅ Redis flushed")
+            print("   [OK] Redis flushed")
         
-        print("✅ Redis reset complete")
+        print("[OK] Redis reset complete")
         return True
         
     except Exception as e:
-        print(f"❌ Redis reset failed: {e}")
+        print(f"[FAILED] Redis reset failed: {e}")
         print(f"   Make sure Redis is running: docker-compose ps redis")
         return False
 
@@ -109,7 +109,7 @@ def reset_qdrant(force=False):
         from qdrant_client import QdrantClient
         
         qdrant_url = os.getenv("QDRANT_URL", "http://qdrant:6333")
-        print("🗑️  Resetting Qdrant...")
+        print("[RESET] Resetting Qdrant...")
         
         client = QdrantClient(url=qdrant_url)
         collections = client.get_collections().collections
@@ -120,25 +120,25 @@ def reset_qdrant(force=False):
                 print(f"     - {collection.name}")
             
             if not force:
-                confirm = input("   ⚠️  Delete all collections? (yes/no): ")
+                confirm = input("   [WARNING] Delete all collections? (yes/no): ")
                 if confirm.lower() != "yes":
                     print("   Cancelled.")
                     return False
             
             for collection in collections:
                 client.delete_collection(collection.name)
-                print(f"   ✅ Deleted collection: {collection.name}")
+                print(f"   [OK] Deleted collection: {collection.name}")
         
-        print("✅ Qdrant reset complete")
+        print("[OK] Qdrant reset complete")
         return True
         
     except Exception as e:
-        print(f"❌ Qdrant reset failed: {e}")
+        print(f"[FAILED] Qdrant reset failed: {e}")
         print(f"   Make sure Qdrant is running: docker-compose ps qdrant")
         return False
 
 def main():
-    parser = argparse.ArgumentParser(description="Reset system data (⚠️ DESTRUCTIVE)")
+    parser = argparse.ArgumentParser(description="Reset system data ([WARNING] DESTRUCTIVE)")
     parser.add_argument("--force", action="store_true", help="Skip confirmation prompts")
     parser.add_argument("--database-only", action="store_true", help="Reset only database")
     parser.add_argument("--redis-only", action="store_true", help="Reset only Redis")
@@ -149,14 +149,14 @@ def main():
     print("=" * 60)
     print("SYSTEM RESET")
     print("=" * 60)
-    print("⚠️  WARNING: This will DELETE all system data!")
+    print("[WARNING] WARNING: This will DELETE all system data!")
     print("   - Database tables")
     print("   - Redis cache")
     print("   - Qdrant collections")
-    print("=" * 60)
+    print("="*60)
     
     if not args.force:
-        confirm = input("\n🔴 Are you SURE? (type 'reset' to confirm): ")
+        confirm = input("\n[CONFIRM] Are you SURE? (type 'reset' to confirm): ")
         if confirm != "reset":
             print("Cancelled.")
             sys.exit(0)
@@ -194,20 +194,20 @@ def main():
     print("RESET SUMMARY")
     print("=" * 60)
     if results["database"] is not None:
-        status = "✅ OK" if results["database"] else "❌ FAILED"
+        status = "[OK]" if results["database"] else "[FAILED]"
         print(f"Database:  {status}")
     if results["redis"] is not None:
-        status = "✅ OK" if results["redis"] else "❌ FAILED"
+        status = "[OK]" if results["redis"] else "[FAILED]"
         print(f"Redis:     {status}")
     if results["qdrant"] is not None:
-        status = "✅ OK" if results["qdrant"] else "❌ FAILED"
+        status = "[OK]" if results["qdrant"] else "[FAILED]"
         print(f"Qdrant:    {status}")
     print("=" * 60)
     
     # Check overall success
     all_success = all(v for v in results.values() if v is not None)
     if all_success:
-        print("\n✅ System reset complete!")
+        print("\n[OK] System reset complete!")
         print("   Now run: python scripts/init_db.py")
         sys.exit(0)
     else:
