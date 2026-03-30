@@ -90,9 +90,85 @@ python scripts/auth_helper.py --user-id YOUR_USER_ID --platforms linkedin
 
 ## ▶️ Running the Application
 
-Start the application in 4 terminals:
+### Step 1: Start Backend Services (Docker)
+```bash
+docker-compose up
+```
 
-**Terminal 1: API Server**
+This starts everything:
+- PostgreSQL database
+- Redis cache
+- Qdrant vector DB
+- FastAPI server
+- Celery worker
+
+Watch for all services to be "UP" before proceeding.
+
+### Step 2: Start Frontend (New Terminal)
+```bash
+cd frontend
+npm run dev
+```
+
+### Access Application
+- 🌐 **Frontend**: http://localhost:3000
+- 📚 **API Docs**: http://localhost:8001/docs
+- ✅ **Health Check**: `curl http://localhost:8001/health`
+
+---
+
+## 🔧 Local Development (No Docker)
+
+Use this mode only if you want everything running locally.
+
+### 1) Start required infrastructure
+
+Required:
+- PostgreSQL (port 5432)
+
+Optional local services (skip if using managed clusters):
+- Redis (port 6379)
+- Qdrant (port 6333)
+
+Example start commands:
+```bash
+# Linux (systemd)
+sudo systemctl start postgresql
+sudo systemctl start redis
+
+# macOS (Homebrew)
+brew services start postgresql
+brew services start redis
+
+# Qdrant (local binary)
+qdrant
+```
+
+### 2) Set local environment variables in `.env`
+```env
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:5432/<db_name>
+REDIS_URL=<redis-cluster-url-from-dashboard>
+CELERY_BROKER_URL=<redis-cluster-url-from-dashboard>
+QDRANT_URL=<qdrant-cluster-url-from-dashboard>
+```
+
+Examples:
+```env
+# Local services
+REDIS_URL=redis://localhost:6379/0
+CELERY_BROKER_URL=redis://localhost:6379/0
+QDRANT_URL=http://localhost:6333
+
+# Managed services (from provider dashboards)
+REDIS_URL=rediss://default:<password>@<host>:<port>
+CELERY_BROKER_URL=rediss://default:<password>@<host>:<port>
+QDRANT_URL=https://<cluster-id>.<region>.cloud.qdrant.io
+QDRANT_API_KEY=<qdrant-api-key>
+```
+
+### 3) Run backend and frontend
+
+**Terminal 1: API**
 ```bash
 source .venv/bin/activate
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8001
@@ -106,19 +182,8 @@ celery -A workers.worker worker --loglevel=info
 
 **Terminal 3: Frontend**
 ```bash
-cd frontend
-npm run dev
+cd frontend && npm run dev
 ```
-
-**Terminal 4 (Optional): Monitor Logs**
-```bash
-docker-compose logs -f
-```
-
-### Access Application
-- 🌐 **Frontend**: http://localhost:3000
-- 📚 **API Docs**: http://localhost:8001/docs
-- ✅ **Health Check**: `curl http://localhost:8001/health`
 
 ---
 
