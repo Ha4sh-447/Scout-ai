@@ -286,9 +286,6 @@ export default function PipelineHistory({ runs, token, activeRunId, onRunCancell
                             : displayRun.status}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-600">
-                    {formatTime(displayRun.started_at)}
-                  </p>
                 </div>
               </div>
 

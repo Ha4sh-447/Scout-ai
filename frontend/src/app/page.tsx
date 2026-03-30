@@ -90,6 +90,65 @@ export default function HomePage() {
               description="Get a daily digest with pre-generated outreach. Just click and apply."
             />
           </motion.div>
+
+          {/* How It Works - Detailed Steps */}
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="mt-48"
+          >
+            <div className="text-center mb-20">
+              <span className="inline-flex items-center px-4 py-1.5 mb-6 rounded-full bg-emerald-500/10 border border-emerald-500/15 text-emerald-400 text-[10px] font-black tracking-[0.1em] uppercase">
+                How It Works
+              </span>
+              <h2 className="text-4xl md:text-6xl font-bold tracking-[-0.04em] text-balance mb-6">
+                Your Complete Job Search <span className="text-emerald-500">Workflow</span>
+              </h2>
+              <p className="text-muted text-lg max-w-[650px] mx-auto">
+                Scout AI handles the heavy lifting with a fully automated pipeline designed to match you with the best opportunities.
+              </p>
+            </div>
+
+            <div className="grid gap-8 md:gap-12">
+              <WorkflowStep
+                step={1}
+                title="Profile Analysis"
+                description="Upload your resume, LinkedIn profile, and job preferences. Our AI analyzes your skills, experience, and career goals."
+                icon="📋"
+              />
+              <WorkflowStep
+                step={2}
+                title="Market Scanning"
+                description="Scout continuously monitors LinkedIn, Wellfound, GitHub Jobs, and 50+ job boards for matching positions."
+                icon="🔍"
+              />
+              <WorkflowStep
+                step={3}
+                title="Intelligent Matching"
+                description="Our ranking engine evaluates each job against your profile, considering salary, growth, company culture, and tech stack."
+                icon="🎯"
+              />
+              <WorkflowStep
+                step={4}
+                title="Resume Customization"
+                description="Automatically generate tailored resumes and cover letters specifically optimized for each opportunity."
+                icon="✍️"
+              />
+              <WorkflowStep
+                step={5}
+                title="Smart Outreach"
+                description="Craft personalized messages to recruiters and hiring managers with context about why you're a great fit."
+                icon="💬"
+              />
+              <WorkflowStep
+                step={6}
+                title="Daily Digest"
+                description="Receive curated opportunities in your inbox daily with one-click apply and messaging capabilities."
+                icon="📧"
+              />
+            </div>
+          </motion.div>
         </div>
       </main>
 
@@ -115,5 +174,43 @@ function MinimalCard({ num, title, description }: { num: string, title: string, 
       </h3>
       <p className="text-muted text-base leading-relaxed font-medium">{description}</p>
     </div>
+  );
+}
+
+function WorkflowStep({ step, title, description, icon }: { step: number, title: string, description: string, icon: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -20 }}
+      whileInView={{ opacity: 1, x: 0 }}
+      viewport={{ once: true }}
+      transition={{ delay: step * 0.1 }}
+      className="group relative"
+    >
+      {/* Connector line for all except last */}
+      {step < 6 && (
+        <div className="absolute left-[44px] top-[100px] w-1 h-12 bg-gradient-to-b from-emerald-500/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+      )}
+
+      <div className="flex gap-8 items-start">
+        {/* Step Circle */}
+        <div className="relative flex-shrink-0">
+          <motion.div
+            whileHover={{ scale: 1.1 }}
+            className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-3xl shadow-lg shadow-emerald-500/20"
+          >
+            {icon}
+          </motion.div>
+          <div className="absolute -bottom-2 -right-2 w-7 h-7 rounded-full bg-background border-2 border-emerald-500 flex items-center justify-center text-xs font-bold text-emerald-400">
+            {step}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 pt-4">
+          <h3 className="text-2xl font-bold mb-3 group-hover:text-emerald-400 transition-colors">{title}</h3>
+          <p className="text-muted text-base leading-relaxed max-w-[600px]">{description}</p>
+        </div>
+      </div>
+    </motion.div>
   );
 }

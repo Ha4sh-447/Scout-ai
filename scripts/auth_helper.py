@@ -108,7 +108,25 @@ async def save_to_database(user_id: str, storage_state: dict):
         async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
         
         async with async_session() as session:
-            from db.models import UserSettings
+            from db.models import User, UserSettings
+            
+            # First, ensure the user exists (required for foreign key)
+            user_result = await session.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = user_result.scalar_one_or_none()
+            
+            if not user:
+                logger.debug(f"Creating new User record for {user_id}")
+                # Create a user record if it doesn't exist
+                user = User(
+                    id=user_id,
+                    email=f"user_{user_id}@job-finder.local",  # Temporary email
+                    hashed_password="",  # No password for session-only auth
+                    is_active=True
+                )
+                session.add(user)
+                await session.flush()  # Flush to ensure user is created before settings
             
             # Get or create user settings
             result = await session.execute(

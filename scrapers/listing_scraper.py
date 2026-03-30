@@ -265,7 +265,12 @@ async def _scrape_wellfound_job_details(page: Page, url: str) -> dict:
 
 
 async def _scrape_linkedin_job_details(page: Page, url: str) -> dict:
-    """Visit a LinkedIn job page and extract recruiter info."""
+    """
+    Visit a LinkedIn job page and extract recruiter info.
+    
+    Note: Recruiter contact info is typically only visible to authenticated users
+    on LinkedIn. For guest users, we extract company info as a fallback.
+    """
     import random
     await page.wait_for_timeout(random.randint(2000, 5000))
     
@@ -277,22 +282,62 @@ async def _scrape_linkedin_job_details(page: Page, url: str) -> dict:
         recruiter_email = None
         recruiter_link = None
         
-        # LinkedIn: Look for "Posted by" or company recruiter info
-        # Check for recruiter name in job details section
-        recruiter_container = await page.query_selector('[class*="posted"], [class*="recruiter"]')
-        if recruiter_container:
-            recruiter_name = (await recruiter_container.inner_text()).strip()
+        # Strategy 1: Look for "Posted by" section - requires authentication
+        posted_by_el = await page.query_selector("a[href*='/in/'][href*='miniProfile']")
+        if not posted_by_el:
+            posted_by_el = await page.query_selector("[class*='show-more-less-html__markup'] a[href*='/in/']")
         
-        # Look for LinkedIn profile links
-        profile_link = await page.query_selector('a[href*="/in/"], a[href*="/company/"]')
-        if profile_link:
-            recruiter_link = await profile_link.get_attribute("href")
+        if posted_by_el:
+            recruiter_name = (await posted_by_el.inner_text()).strip()
+            recruiter_link = await posted_by_el.get_attribute("href")
+            if recruiter_link and recruiter_link.startswith("/"):
+                recruiter_link = "https://www.linkedin.com" + recruiter_link
+            logger.info(f"[LinkedIn recruiter] Found via Strategy 1 (Posted by): {recruiter_name}")
         
-        # Extract email from page text if available
-        page_text = await page.inner_text("body")
-        email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', page_text)
-        if email_match:
-            recruiter_email = email_match.group(0)
+        # Strategy 2: Look in job metadata section
+        if not recruiter_name:
+            job_details_section = await page.query_selector("[class*='description'] ~ div, [class*='top-card']")
+            if job_details_section:
+                recruiter_candidate = await job_details_section.query_selector("a[href*='/in/']")
+                if recruiter_candidate:
+                    recruiter_name = (await recruiter_candidate.inner_text()).strip()
+                    recruiter_link = await recruiter_candidate.get_attribute("href")
+                    logger.info(f"[LinkedIn recruiter] Found via Strategy 2 (metadata): {recruiter_name}")
+        
+        # Strategy 3: Look in "About this job" section
+        if not recruiter_name:
+            about_section = await page.query_selector("[class*='about-the-job'], [class*='job-details']")
+            if about_section:
+                profile_link = await about_section.query_selector("a[href*='/in/']")
+                if profile_link:
+                    recruiter_name = (await profile_link.inner_text()).strip()
+                    recruiter_link = await profile_link.get_attribute("href")
+                    logger.info(f"[LinkedIn recruiter] Found via Strategy 3 (about): {recruiter_name}")
+        
+        # Strategy 4: Last resort - search entire page
+        if not recruiter_name:
+            all_profile_links = await page.query_selector_all("a[href*='/in/']")
+            logger.info(f"[LinkedIn recruiter] Strategy 4: found {len(all_profile_links)} profile links on page")
+            for link in all_profile_links[2:5]:
+                href = await link.get_attribute("href")
+                if href and "/company/" not in href and "/jobs/" not in href:
+                    recruiter_name = (await link.inner_text()).strip()
+                    if recruiter_name and len(recruiter_name) > 0:
+                        recruiter_link = href
+                        logger.info(f"[LinkedIn recruiter] Found via Strategy 4 (fallback search): {recruiter_name}")
+                        break
+        
+        # Normalize recruiter link
+        if recruiter_link:
+            if recruiter_link.startswith("/"):
+                recruiter_link = "https://www.linkedin.com" + recruiter_link
+            recruiter_link = recruiter_link.split("?")[0]
+        
+        # Note: Email extraction is risky on LinkedIn - skip to avoid false positives
+        
+        if not recruiter_name:
+            logger.info(f"[LinkedIn recruiter] No recruiter found (typical - requires authentication on LinkedIn)")
+            logger.info(f"[LinkedIn recruiter] This is expected for guest/unauthenticated users")
         
         return {
             "recruiter_name": recruiter_name,
@@ -301,6 +346,7 @@ async def _scrape_linkedin_job_details(page: Page, url: str) -> dict:
         }
     except Exception as e:
         logger.warning(f"[listing_scraper] LinkedIn detail scrape failed for {url}: {e}")
+        logger.info("[listing_scraper] Note: Recruiter info often requires LinkedIn authentication")
         return {}
 
 
@@ -432,25 +478,40 @@ async def scrape_listing_page(
 
         cards = await extract_fn(page, max_cards=max_cards)
         
-        # Extract recruiter details for each platform
+        await page.close()
+        
+        # Extract recruiter details for each platform (on separate page loads)
         if platform == "linkedin" and cards:
             logger.info(f"[listing_scraper] LinkedIn: starting recruiter detail scrape for {len(cards)} jobs")
-            for card in cards:
-                details = await _scrape_linkedin_job_details(page, card["link"])
-                card.update(details)
+            for i, card in enumerate(cards):
+                try:
+                    detail_page = await bm.new_page()
+                    details = await _scrape_linkedin_job_details(detail_page, card["link"])
+                    card.update(details)
+                    await detail_page.close()
+                except Exception as e:
+                    logger.warning(f"[listing_scraper] Failed to scrape LinkedIn details for job {i}: {e}")
         elif platform == "indeed" and cards:
             logger.info(f"[listing_scraper] Indeed: starting recruiter detail scrape for {len(cards)} jobs")
-            for card in cards:
-                details = await _scrape_indeed_job_details(page, card["link"])
-                card.update(details)
+            for i, card in enumerate(cards):
+                try:
+                    detail_page = await bm.new_page()
+                    details = await _scrape_indeed_job_details(detail_page, card["link"])
+                    card.update(details)
+                    await detail_page.close()
+                except Exception as e:
+                    logger.warning(f"[listing_scraper] Failed to scrape Indeed details for job {i}: {e}")
         elif platform == "wellfound" and cards:
             logger.info(f"[listing_scraper] Wellfound: starting detailed scrape for {len(cards)} jobs")
-            for card in cards:
-                details = await _scrape_wellfound_job_details(page, card["link"])
-                card.update(details)
+            for i, card in enumerate(cards):
+                try:
+                    detail_page = await bm.new_page()
+                    details = await _scrape_wellfound_job_details(detail_page, card["link"])
+                    card.update(details)
+                    await detail_page.close()
+                except Exception as e:
+                    logger.warning(f"[listing_scraper] Failed to scrape Wellfound details for job {i}: {e}")
                 
-        await page.close()
-
         logger.info(f"[listing_scraper] {platform}: extracted {len(cards)} job cards (cap {max_cards}) from {normalized}")
 
         if not cards:
