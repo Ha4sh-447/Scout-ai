@@ -24,6 +24,7 @@ interface PipelineRun {
   active_duration_minutes?: number;
   is_scheduled?: boolean;
   interval_hours?: number;
+  emails_sent?: boolean;
 }
 
 interface PipelineHistoryProps {
@@ -221,7 +222,12 @@ export default function PipelineHistory({ runs, token, activeRunId, onRunCancell
 
   const handleCancelRun = async (runId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm("Are you sure you want to cancel this pipeline run?")) return;
+    const run = runDetails[runId] || runs.find(r => r.id === runId);
+    const isScheduledDone = run?.is_scheduled && run?.completed_at;
+    const message = isScheduledDone
+      ? "This will cancel future scheduled executions. Are you sure?"
+      : "Are you sure you want to cancel this pipeline run?";
+    if (!confirm(message)) return;
     
     try {
       setCancelingRunId(runId);
@@ -315,13 +321,13 @@ export default function PipelineHistory({ runs, token, activeRunId, onRunCancell
                   )}
                 </div>
                 
-                {/* Cancel Button for Running/Pending Runs */}
-                {isRunning && (
+                {/* Cancel Button for Running/Pending/Done/Scheduled Runs */}
+                {(isRunning || displayRun.status === "done" || (displayRun.is_scheduled && displayRun.completed_at)) && displayRun.status !== "cancelled" && displayRun.status !== "failed" && (
                   <button
                     onClick={(e) => handleCancelRun(displayRun.id, e)}
                     disabled={cancelingRunId === displayRun.id}
                     className="p-2 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 transition-colors disabled:opacity-50"
-                    title="Cancel this pipeline run"
+                    title={isRunning ? "Cancel this pipeline run" : "Cancel this scheduled pipeline"}
                   >
                     {cancelingRunId === displayRun.id ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
@@ -406,12 +412,20 @@ export default function PipelineHistory({ runs, token, activeRunId, onRunCancell
                     <p className="text-xl font-bold text-gray-900">{displayRun.jobs_ranked || 0}</p>
                   </div>
 
-                  <div className="bg-amber-50 rounded p-3 border border-amber-200">
+                  <div className={`rounded p-3 border ${displayRun.emails_sent ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
                     <div className="flex items-center gap-2 mb-1">
-                      <Mail className="w-4 h-4 text-amber-500" />
-                      <span className="text-xs font-medium text-gray-600">Receiver</span>
+                      <Mail className={`w-4 h-4 ${displayRun.emails_sent ? 'text-green-500' : 'text-amber-500'}`} />
+                      <span className="text-xs font-medium text-gray-600">
+                        {displayRun.emails_sent ? 'Email Sent ✓' : 'Email'}
+                      </span>
                     </div>
-                    <p className="text-xs font-bold text-gray-900 truncate">{displayRun.notification_email || 'N/A'}</p>
+                    <p className="text-xs font-bold text-gray-900 truncate">
+                      {displayRun.notification_email
+                        ? displayRun.emails_sent
+                          ? displayRun.notification_email
+                          : `${displayRun.notification_email} (pending)`
+                        : 'Not configured'}
+                    </p>
                   </div>
                 </div>
 

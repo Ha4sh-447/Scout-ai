@@ -128,11 +128,24 @@ async def trigger_pipeline(
         body.urls: Direct URLs to scrape
     """
     from workers.tasks import run_pipeline_task
-    from db.models import PipelineRun
+    from db.models import PipelineRun, UserResume
     import logging
     import uuid
     
     logger = logging.getLogger(__name__)
+    
+    # Check that user has at least one active resume uploaded
+    resume_result = await db.execute(
+        select(UserResume).where(
+            UserResume.user_id == current_user.id,
+            UserResume.is_active == True
+        ).limit(1)
+    )
+    if not resume_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail="Please upload at least one resume before starting a pipeline."
+        )
     
     logger.info(f"[trigger_pipeline] Pipeline triggered: is_scheduled={body.is_scheduled}, interval_hours={body.interval_hours}")
 

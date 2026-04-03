@@ -186,12 +186,25 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
             })
             jobs_with_drafts = msg_result.get("jobs_with_drafts", ranked_jobs)
 
-            # Save job results to Postgres
+            # Save job results to Postgres (with cross-run dedup)
+            existing_hashes_result = await db.execute(
+                select(JobResult.content_hash).where(
+                    JobResult.user_id == user_id,
+                    JobResult.content_hash != "",
+                )
+            )
+            existing_hashes = {row[0] for row in existing_hashes_result.fetchall()}
+
+            saved_count = 0
             for job in jobs_with_drafts:
+                job_hash = job.content_hash or ""
+                if job_hash and job_hash in existing_hashes:
+                    logger.info(f"[pipeline] Skipping duplicate job: {job.title} at {job.company} (hash={job_hash[:8]})")
+                    continue
                 jr = JobResult(
                     run_id=run_id,
                     user_id=user_id,
-                    content_hash=job.content_hash or "",
+                    content_hash=job_hash,
                     title=job.title,
                     company=job.company,
                     location=job.location,
@@ -209,9 +222,14 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                     outreach_linkedin_draft=getattr(job, "outreach_linkedin_draft", None),
                 )
                 db.add(jr)
+                if job_hash:
+                    existing_hashes.add(job_hash)
+                saved_count += 1
             await db.commit()
+            logger.info(f"[pipeline] Saved {saved_count} new jobs ({len(jobs_with_drafts) - saved_count} duplicates skipped)")
 
             # Stage 5: Notification
+            emails_sent = False
             if settings.notification_email:
                 try:
                     email_cfg = EmailConfig(
@@ -222,13 +240,14 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                         recipient_email=settings.notification_email,
                     )
                     run_label = datetime.utcnow().strftime("%-d %b %Y · %H:%M UTC")
-                    await notification_graph.ainvoke({
+                    notification_result = await notification_graph.ainvoke({
                         "user_id":          user_id,
                         "jobs_with_drafts": jobs_with_drafts,
                         "email_cfg":        email_cfg,
                         "run_label":        run_label,
                         "status":           "starting",
                     })
+                    emails_sent = notification_result.get("email_sent", False)
                 except Exception as e:
                     logger.warning(f"[pipeline] Notification failed: {e}")
 
@@ -237,6 +256,7 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                 jobs_found=len(all_jobs),
                 jobs_matched=len(matched_jobs),
                 jobs_ranked=len(ranked_jobs),
+                emails_sent=emails_sent,
             )
             logger.info(
                 f"[pipeline] Run {run_id} complete: "
@@ -254,6 +274,7 @@ async def _finish_run(
     jobs_found: int = 0,
     jobs_matched: int = 0,
     jobs_ranked: int = 0,
+    emails_sent: bool = False,
 ):
     """Update pipeline stats and completion timestamp, then set status to done.
     
@@ -269,11 +290,12 @@ async def _finish_run(
         run.jobs_found = jobs_found
         run.jobs_matched = jobs_matched
         run.jobs_ranked = jobs_ranked
+        run.emails_sent = emails_sent
         run.completed_at = datetime.utcnow()   # naive UTC — matches TIMESTAMP WITHOUT TIME ZONE
         
         run.status = "done"
         
-        logger.info(f"[_finish_run] Run {run_id} marked as done. is_scheduled={run.is_scheduled}, interval={run.interval_hours}h")
+        logger.info(f"[_finish_run] Run {run_id} marked as done. is_scheduled={run.is_scheduled}, interval={run.interval_hours}h, emails_sent={emails_sent}")
         
         await db.commit()
 

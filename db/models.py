@@ -91,6 +91,9 @@ class PipelineRun(Base):
     # Per-pipeline scheduling
     is_scheduled: Mapped[bool] = mapped_column(Boolean, default=False)  # Whether this run should be rescheduled
     interval_hours: Mapped[int] = mapped_column(Integer, default=3)  # Scheduling interval for this specific run
+    
+    # Notification tracking
+    emails_sent: Mapped[bool] = mapped_column(Boolean, default=False)  # Whether notification email was successfully sent
  
     user: Mapped["User"] = relationship(back_populates="pipeline_runs")
     job_results: Mapped[list["JobResult"]] = relationship(back_populates="run", cascade="all, delete-orphan")

@@ -1,44 +1,125 @@
 #!/usr/bin/env python3
 """
-Complete system reset - drop all tables, clear Redis and Qdrant.
-[WARNING] DESTRUCTIVE - Use with caution! Deletes all data.
+Complete system reset - clear records from PostgreSQL, Redis and Qdrant.
+[WARNING] DESTRUCTIVE - Use with caution! Deletes data records only.
 
 Usage:
-    python scripts/system_reset.py              # Interactive (asks for confirmation)
-    python scripts/system_reset.py --force      # Force reset without confirmation
-    python scripts/system_reset.py --database-only  # Reset only database
-    python scripts/system_reset.py --redis-only     # Reset only Redis
-    python scripts/system_reset.py --qdrant-only    # Reset only Qdrant
+    python scripts/system_reset.py              
+    python scripts/system_reset.py --force     
+    python scripts/system_reset.py --database-only  
+    python scripts/system_reset.py --redis-only    
+    python scripts/system_reset.py --qdrant-only   
 """
 
 import os
 import sys
 import argparse
-from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 from dotenv import load_dotenv
 
-# Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-# Load environment variables
 load_dotenv()
 
+
+def _swap_host(url: str, new_host: str) -> str:
+    """Return a URL with host replaced while preserving auth, port, path, query."""
+    parsed = urlparse(url)
+    if not parsed.hostname:
+        return url
+
+    userinfo = ""
+    if parsed.username:
+        userinfo = parsed.username
+        if parsed.password:
+            userinfo += f":{parsed.password}"
+        userinfo += "@"
+
+    port = f":{parsed.port}" if parsed.port else ""
+    netloc = f"{userinfo}{new_host}{port}"
+    return urlunparse(parsed._replace(netloc=netloc))
+
+
+def _unique(items):
+    seen = set()
+    out = []
+    for item in items:
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def _build_db_url_candidates() -> list[str]:
+    """Build sync SQLAlchemy DB URL candidates for both Docker and local shells."""
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        db_user = os.getenv("DB_USER", "")
+        db_password = os.getenv("DB_PASSWORD", "")
+        db_name = os.getenv("DB_NAME", "")
+        db_host = os.getenv("DB_HOST", "db")
+        db_url = f"postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}"
+
+    # system_reset uses sync engine; asyncpg URL causes greenlet_spawn errors.
+    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+
+    candidates = [sync_url]
+    parsed = urlparse(sync_url)
+    if parsed.hostname == "db":
+        candidates.extend([_swap_host(sync_url, "localhost"), _swap_host(sync_url, "127.0.0.1")])
+    elif parsed.hostname in {"localhost", "127.0.0.1"}:
+        candidates.append(_swap_host(sync_url, "db"))
+
+    return _unique(candidates)
+
+
+def _build_redis_url_candidates() -> list[str]:
+    redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+    candidates = [redis_url]
+    parsed = urlparse(redis_url)
+    if parsed.hostname == "redis":
+        candidates.extend([_swap_host(redis_url, "localhost"), _swap_host(redis_url, "127.0.0.1")])
+    elif parsed.hostname in {"localhost", "127.0.0.1"}:
+        candidates.append(_swap_host(redis_url, "redis"))
+    return _unique(candidates)
+
+
+def _build_qdrant_url_candidates() -> list[str]:
+    qdrant_url = os.getenv("QDRANT_URL", "http://qdrant:6333")
+    candidates = [qdrant_url]
+    parsed = urlparse(qdrant_url)
+    if parsed.hostname == "qdrant":
+        candidates.extend([_swap_host(qdrant_url, "localhost"), _swap_host(qdrant_url, "127.0.0.1")])
+    elif parsed.hostname in {"localhost", "127.0.0.1"}:
+        candidates.append(_swap_host(qdrant_url, "qdrant"))
+    return _unique(candidates)
+
 def reset_database(force=False):
-    """Drop all tables and recreate them"""
+    """Clear all rows from all tables while preserving schema."""
     try:
         from sqlalchemy import create_engine, text, inspect
-        
-        # Get database URL
-        db_url = os.getenv("DATABASE_URL")
-        if not db_url:
-            db_user = os.getenv("DB_USER", "")
-            db_password = os.getenv("DB_PASSWORD", "")
-            db_name = os.getenv("DB_NAME", "job_agent")
-            db_url = f"postgresql://{db_user}:{db_password}@db:5432/{db_name}"
-        
+
         print("[RESET] Resetting PostgreSQL database...")
-        engine = create_engine(db_url)
+        engine = None
+
+        # Try Docker hostnames first, then localhost fallbacks.
+        for candidate in _build_db_url_candidates():
+            try:
+                engine = create_engine(candidate)
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                print(f"   [OK] Connected using: {candidate}")
+                break
+            except Exception as e:
+                print(f"   [WARN] DB connection failed for {candidate}: {e}")
+                if engine is not None:
+                    engine.dispose()
+                engine = None
+
+        if engine is None:
+            print("[FAILED] Database reset failed: Could not connect to PostgreSQL using any configured endpoint")
+            return False
         
         # Get list of tables
         inspector = inspect(engine)
@@ -50,18 +131,19 @@ def reset_database(force=False):
                 print(f"     - {table}")
             
             if not force:
-                confirm = input("\n   [WARNING] Drop all tables? (yes/no): ")
+                confirm = input("\n   [WARNING] Delete all table records? (yes/no): ")
                 if confirm.lower() != "yes":
                     print("   Cancelled.")
                     return False
         
-        # Drop all tables
+        # Truncate all tables and reset identities while preserving schema.
         with engine.begin() as connection:
-            for table in reversed(tables):  # Reverse to respect foreign keys
-                connection.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
-                print(f"   [OK] Dropped table: {table}")
+            for table in reversed(tables):
+                connection.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
+                print(f"   [OK] Cleared table: {table}")
         
-        print("[OK] Database reset complete")
+        print("[OK] Database records cleared (schema preserved)")
+        engine.dispose()
         return True
         
     except Exception as e:
@@ -73,13 +155,23 @@ def reset_redis(force=False):
     try:
         import redis
         
-        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
         print("[RESET] Resetting Redis...")
-        
-        client = redis.from_url(redis_url)
-        
-        # Check Redis connection
-        client.ping()
+
+        client = None
+        for candidate in _build_redis_url_candidates():
+            try:
+                test_client = redis.from_url(candidate)
+                test_client.ping()
+                client = test_client
+                print(f"   [OK] Connected using: {candidate}")
+                break
+            except Exception as e:
+                print(f"   [WARN] Redis connection failed for {candidate}: {e}")
+
+        if client is None:
+            print("[FAILED] Redis reset failed: Could not connect to Redis using any configured endpoint")
+            print("   Make sure Redis is running: docker-compose ps redis")
+            return False
         
         # Get DB size
         db_size = client.dbsize()
@@ -104,14 +196,29 @@ def reset_redis(force=False):
         return False
 
 def reset_qdrant(force=False):
-    """Delete all Qdrant collections"""
+    """Delete all Qdrant points while preserving collection definitions."""
     try:
         from qdrant_client import QdrantClient
+        from qdrant_client import models
         
-        qdrant_url = os.getenv("QDRANT_URL", "http://qdrant:6333")
         print("[RESET] Resetting Qdrant...")
-        
-        client = QdrantClient(url=qdrant_url)
+
+        client = None
+        for candidate in _build_qdrant_url_candidates():
+            try:
+                test_client = QdrantClient(url=candidate)
+                test_client.get_collections()
+                client = test_client
+                print(f"   [OK] Connected using: {candidate}")
+                break
+            except Exception as e:
+                print(f"   [WARN] Qdrant connection failed for {candidate}: {e}")
+
+        if client is None:
+            print("[FAILED] Qdrant reset failed: Could not connect to Qdrant using any configured endpoint")
+            print("   Make sure Qdrant is running: docker-compose ps qdrant")
+            return False
+
         collections = client.get_collections().collections
         
         if collections:
@@ -120,16 +227,25 @@ def reset_qdrant(force=False):
                 print(f"     - {collection.name}")
             
             if not force:
-                confirm = input("   [WARNING] Delete all collections? (yes/no): ")
+                confirm = input("   [WARNING] Delete all points from all collections? (yes/no): ")
                 if confirm.lower() != "yes":
                     print("   Cancelled.")
                     return False
             
             for collection in collections:
-                client.delete_collection(collection.name)
-                print(f"   [OK] Deleted collection: {collection.name}")
+                try:
+                    # Empty filter matches all points.
+                    client.delete(
+                        collection_name=collection.name,
+                        points_selector=models.Filter(must=[]),
+                        wait=True,
+                    )
+                    print(f"   [OK] Cleared points in collection: {collection.name}")
+                except Exception as e:
+                    print(f"   [WARN] Could not clear collection {collection.name}: {e}")
+                    raise
         
-        print("[OK] Qdrant reset complete")
+        print("[OK] Qdrant points cleared (collections preserved)")
         return True
         
     except Exception as e:
@@ -149,10 +265,10 @@ def main():
     print("=" * 60)
     print("SYSTEM RESET")
     print("=" * 60)
-    print("[WARNING] WARNING: This will DELETE all system data!")
-    print("   - Database tables")
+    print("[WARNING] WARNING: This will DELETE all system records!")
+    print("   - Database table records (schema preserved)")
     print("   - Redis cache")
-    print("   - Qdrant collections")
+    print("   - Qdrant points (collections preserved)")
     print("="*60)
     
     if not args.force:
@@ -167,13 +283,13 @@ def main():
         "qdrant": True,
     }
     
-    # Determine what to reset
+   
     if args.database_only:
-        results["redis"] = results["qdrant"] = None  # Skip
+        results["redis"] = results["qdrant"] = None  
     elif args.redis_only:
-        results["database"] = results["qdrant"] = None  # Skip
+        results["database"] = results["qdrant"] = None 
     elif args.qdrant_only:
-        results["database"] = results["redis"] = None  # Skip
+        results["database"] = results["redis"] = None
     
     # Execute resets
     print()

@@ -44,6 +44,7 @@ class PipelineRunResponse(BaseModel):
     active_duration_minutes: Optional[int] = None  # Minutes since first execution
     is_scheduled: bool = False  # Whether this pipeline is scheduled for recurring runs
     interval_hours: int = 3  # Scheduling interval for this run
+    emails_sent: bool = False  # Whether notification email was successfully sent
 
     class Config:
         from_attributes = True

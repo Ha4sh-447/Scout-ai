@@ -127,6 +127,14 @@ export default function Dashboard() {
 
   const handleTrigger = async () => {
     const token = (session as any)?.user?.accessToken || "";
+    
+    // Gate: require at least one resume
+    if (uploadedResumes.length === 0) {
+      alert("Please upload at least one resume before starting a pipeline.");
+      setActiveTab("resumes");
+      return;
+    }
+    
     try {
       setTriggering(true);
       const urlList = customUrls.split("\n").map(u => u.trim()).filter(u => u.length > 0);
@@ -389,7 +397,7 @@ export default function Dashboard() {
            {/* Metrics/Stats Bar */}
            <div className="grid grid-cols-4 gap-6 mb-12">
               <StatCard label="Jobs Found" value={stats.jobsFound.toString()} icon={<BriefcaseIcon size={20} className="text-emerald-500" />} />
-              <StatCard label="Emails Sent" value={stats.notifications.toString()} icon={<Mail className="text-blue-500" />} />
+              <StatCard label="Emails Sent" value={runs.filter((r: any) => r.emails_sent).length.toString()} icon={<Mail className="text-blue-500" />} />
               <StatCard label="Verified Matches" value={jobs.length.toString()} icon={<CheckCircle className="text-purple-500" />} />
               <div className="glass p-5 rounded-2xl border border-slate-900 border-t-slate-800/10 relative overflow-hidden group">
                  <div className="flex items-center gap-3 mb-3">
@@ -483,6 +491,30 @@ export default function Dashboard() {
                )}
 
                {/* Dashboard Stats */}
+               {/* Cumulative Pipeline Stats */}
+               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                 <div className="glass p-5 rounded-2xl border border-slate-800">
+                   <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Discovered</p>
+                   <p className="text-2xl font-bold text-white">{runs.reduce((sum: number, r: any) => sum + (r.jobs_found || 0), 0)}</p>
+                   <p className="text-emerald-400 text-[10px] mt-1">Across {runs.length} run{runs.length !== 1 ? 's' : ''}</p>
+                 </div>
+                 <div className="glass p-5 rounded-2xl border border-slate-800">
+                   <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Matched</p>
+                   <p className="text-2xl font-bold text-white">{runs.reduce((sum: number, r: any) => sum + (r.jobs_matched || 0), 0)}</p>
+                   <p className="text-blue-400 text-[10px] mt-1">Resume-matched jobs</p>
+                 </div>
+                 <div className="glass p-5 rounded-2xl border border-slate-800">
+                   <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Ranked</p>
+                   <p className="text-2xl font-bold text-white">{runs.reduce((sum: number, r: any) => sum + (r.jobs_ranked || 0), 0)}</p>
+                   <p className="text-purple-400 text-[10px] mt-1">Scored &amp; ranked</p>
+                 </div>
+                 <div className="glass p-5 rounded-2xl border border-slate-800">
+                   <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Emails Sent</p>
+                   <p className="text-2xl font-bold text-white">{runs.filter((r: any) => r.emails_sent).length}</p>
+                   <p className="text-amber-400 text-[10px] mt-1">Notification digests</p>
+                 </div>
+               </div>
+
                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                  {/* Jobs Found Card */}
                  <motion.div
@@ -603,6 +635,11 @@ export default function Dashboard() {
 
                    <button
                      onClick={async () => {
+                       if (uploadedResumes.length === 0) {
+                         alert("Please upload at least one resume before starting a pipeline.");
+                         setActiveTab("resumes");
+                         return;
+                       }
                        const token = (session as any)?.user?.accessToken || "";
                        try {
                          setTriggering(true);

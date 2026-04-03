@@ -119,28 +119,156 @@ def _normalize_wellfound_url(url: str, query: str = "", location: str = "") -> s
 
 
 async def _extract_linkedin_cards(page: Page, max_cards: int = 30) -> list[dict]:
-    """Extract job cards from LinkedIn's public search page."""
-    cards = await page.query_selector_all(".base-card")
-    results = []
+    """
+    Extract job cards from LinkedIn search page.
+    Supports both guest/public view (.base-card) and authenticated view
+    (scaffold-layout job cards) with automatic detection.
+    """
+    # Log the current page state for debugging
+    current_url = page.url
+    page_title = await page.title()
+    logger.info(f"[listing_scraper] LinkedIn page loaded: title='{page_title}', url={current_url}")
 
+    # --- Try guest/public view selectors first ---
+    cards = await page.query_selector_all(".base-card")
+
+    if cards:
+        logger.info(f"[listing_scraper] LinkedIn: detected GUEST view ({len(cards)} .base-card elements)")
+        return await _extract_linkedin_guest_cards(cards, max_cards)
+
+    # --- Fallback: authenticated/logged-in view ---
+    auth_cards = await page.query_selector_all(
+        "li.scaffold-layout__list-item .job-card-container, "
+        "li.jobs-search-results__list-item, "
+        "div.job-card-container, "
+        "li.scaffold-layout__list-item"
+    )
+
+    if auth_cards:
+        logger.info(f"[listing_scraper] LinkedIn: detected AUTH view ({len(auth_cards)} job-card elements)")
+        return await _extract_linkedin_auth_cards(auth_cards, max_cards)
+
+    # --- Last resort: grab any link that looks like a job posting ---
+    job_links = await page.query_selector_all('a[href*="/jobs/view/"]')
+    if job_links:
+        logger.info(f"[listing_scraper] LinkedIn: fallback - found {len(job_links)} job links on page")
+        return await _extract_linkedin_fallback_links(page, job_links, max_cards)
+
+    # --- DIAGNOSTIC: dump page info when nothing found ---
+    logger.warning(f"[listing_scraper] LinkedIn: 0 cards found with ALL selectors!")
+    logger.warning(f"[listing_scraper] Page title: '{page_title}'")
+    logger.warning(f"[listing_scraper] Final URL: {current_url}")
+    try:
+        body_text = await page.evaluate("document.body.innerText.substring(0, 1500)")
+        logger.warning(f"[listing_scraper] Page body text (first 1500 chars):\n{body_text}")
+    except Exception:
+        pass
+    try:
+        html_snippet = await page.evaluate("document.body.innerHTML.substring(0, 3000)")
+        logger.warning(f"[listing_scraper] Page HTML snippet (first 3000 chars):\n{html_snippet}")
+    except Exception:
+        pass
+
+    return []
+
+
+async def _extract_linkedin_guest_cards(cards, max_cards: int) -> list[dict]:
+    """Extract from LinkedIn's public/guest search page (.base-card elements)."""
+    results = []
     for card in cards[:max_cards]:
         link_el = await card.query_selector("a")
         href = (await link_el.get_attribute("href")) if link_el else None
-        
+
         raw_text = (await card.inner_text()).strip()
-        
-        # Try to find recency text (e.g. "2 hours ago", "1 day ago")
-        posted_at_el = await card.query_selector(".job-search-card__listdate, .job-search-card__listdate--new, [datetime]")
+
+        posted_at_el = await card.query_selector(
+            ".job-search-card__listdate, .job-search-card__listdate--new, [datetime]"
+        )
         posted_at_text = (await posted_at_el.inner_text()).strip() if posted_at_el else None
-        
+
         if href and raw_text:
             href = href.split("?")[0]
             results.append({
-                "link": href, 
+                "link": href,
                 "raw_text": raw_text,
-                "posted_at_text": posted_at_text
+                "posted_at_text": posted_at_text,
             })
+    return results
 
+
+async def _extract_linkedin_auth_cards(cards, max_cards: int) -> list[dict]:
+    """Extract from LinkedIn's authenticated/logged-in job search view."""
+    results = []
+    for card in cards[:max_cards]:
+        # Find the job link — authenticated view uses various anchor patterns
+        link_el = (
+            await card.query_selector('a[href*="/jobs/view/"]')
+            or await card.query_selector('a.job-card-container__link')
+            or await card.query_selector('a.job-card-list__title')
+            or await card.query_selector("a")
+        )
+        href = (await link_el.get_attribute("href")) if link_el else None
+
+        raw_text = (await card.inner_text()).strip()
+
+        # Recency in authenticated view
+        posted_at_el = (
+            await card.query_selector("time")
+            or await card.query_selector('[class*="listed-at"], [class*="listdate"]')
+            or await card.query_selector('[class*="time"]')
+        )
+        posted_at_text = None
+        if posted_at_el:
+            # Prefer the datetime attribute if available
+            posted_at_text = await posted_at_el.get_attribute("datetime")
+            if not posted_at_text:
+                posted_at_text = (await posted_at_el.inner_text()).strip()
+
+        if href and raw_text:
+            # Normalize LinkedIn URLs
+            if href.startswith("/"):
+                href = "https://www.linkedin.com" + href
+            href = href.split("?")[0]
+            results.append({
+                "link": href,
+                "raw_text": raw_text,
+                "posted_at_text": posted_at_text,
+            })
+    return results
+
+
+async def _extract_linkedin_fallback_links(page: Page, job_links, max_cards: int) -> list[dict]:
+    """Last-resort fallback: extract any /jobs/view/ links visible on page."""
+    results = []
+    seen_hrefs = set()
+    for link in job_links[:max_cards]:
+        href = await link.get_attribute("href")
+        if not href:
+            continue
+        if href.startswith("/"):
+            href = "https://www.linkedin.com" + href
+        href = href.split("?")[0]
+        if href in seen_hrefs:
+            continue
+        seen_hrefs.add(href)
+
+        # Try to get surrounding text from parent element
+        parent = await link.evaluate_handle("el => el.closest('li') || el.parentElement")
+        raw_text = ""
+        if parent:
+            try:
+                raw_text = (await parent.inner_text()).strip()
+            except Exception:
+                raw_text = (await link.inner_text()).strip()
+        if not raw_text:
+            raw_text = (await link.inner_text()).strip()
+
+        if raw_text:
+            results.append({
+                "link": href,
+                "raw_text": raw_text,
+                "posted_at_text": None,
+            })
     return results
 
 
@@ -473,8 +601,9 @@ async def scrape_listing_page(
     try:
         page = await open_page(bm, normalized, platform=platform)
 
-        # Let JS render job cards — fixed delay instead of networkidle (stealthier)
-        await page.wait_for_timeout(3000)
+        # Let JS render job cards — LinkedIn auth view is SPA-rendered, needs more time
+        wait_time = 5000 if platform == "linkedin" else 3000
+        await page.wait_for_timeout(wait_time)
 
         cards = await extract_fn(page, max_cards=max_cards)
         
