@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from api.deps import get_current_user
-from api.users.schemas import ResumeUploadResponse, SessionUpdate, SettingsResponse, SettingsUpdate, UserResumeResponse
+from api.users.schemas import ResumeUploadResponse, SessionUpdate, SettingsResponse, SettingsUpdate, UserResumeResponse, LinkedInCookieUpdate
 from db.base import get_db
 from db.models import User, UserSettings, PipelineRun, UserResume
 from workers.worker import celery_app
@@ -67,6 +67,14 @@ async def update_settings(
     if body.notification_email is not None:
         settings.notification_email = body.notification_email
 
+    if body.max_jobs_per_run is not None:
+        if not 1 <= body.max_jobs_per_run <= 100:
+            raise HTTPException(status_code=400, detail="max_jobs_per_run must be 1-100")
+        settings.max_jobs_per_run = body.max_jobs_per_run
+
+    if body.enable_outreach is not None:
+        settings.enable_outreach = body.enable_outreach
+
     await db.commit()
     await db.refresh(settings)
     return settings
@@ -120,6 +128,45 @@ async def update_browser_session(
     return {"message": "Browser session updated successfully"}
 
 
+@router.post("/settings/linkedin-cookie")
+async def update_linkedin_cookie(
+    request: LinkedInCookieUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Takes a raw li_at cookie and constructs the Playwright storage_state JSON.
+    """
+    from sqlalchemy import select
+    result = await db.execute(select(UserSettings).where(UserSettings.user_id == current_user.id))
+    settings = result.scalar_one_or_none()
+    
+    if not settings:
+        settings = UserSettings(user_id=current_user.id)
+        db.add(settings)
+        
+    storage_state = {
+        "cookies": [
+            {
+                "name": "li_at",
+                "value": request.li_at_cookie,
+                "domain": ".linkedin.com",
+                "path": "/",
+                "expires": -1,
+                "httpOnly": True,
+                "secure": True,
+                "sameSite": "None"
+            }
+        ],
+        "origins": []
+    }
+    
+    settings.browser_session = storage_state
+    await db.commit()
+    
+    return {"message": "LinkedIn session securely stored"}
+
+
 def _calculate_file_hash(file_path: str | Path) -> str:
     """Calculate SHA256 hash of a file."""
     sha256_hash = hashlib.sha256()
@@ -153,9 +200,12 @@ async def upload_resume(
         tmp_path = tmp.name
 
     try:
-        # Calculate file hash and size
-        file_hash = _calculate_file_hash(tmp_path)
         file_size = Path(tmp_path).stat().st_size if Path(tmp_path).exists() else 0
+        if file_size > 10 * 1024 * 1024:
+            Path(tmp_path).unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="Resume file exceeds 10MB limit. Please upload a smaller file.")
+            
+        file_hash = _calculate_file_hash(tmp_path)
 
         # Check if resume with same filename already exists for this user
         existing = await db.execute(

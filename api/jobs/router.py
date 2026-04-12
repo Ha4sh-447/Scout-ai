@@ -134,7 +134,6 @@ async def trigger_pipeline(
     
     logger = logging.getLogger(__name__)
     
-    # Check that user has at least one active resume uploaded
     resume_result = await db.execute(
         select(UserResume).where(
             UserResume.user_id == current_user.id,

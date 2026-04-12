@@ -9,6 +9,8 @@ class SettingsUpdate(BaseModel):
     location: Optional[str] = None
     resume_summary: Optional[str] = None
     notification_email: Optional[EmailStr] = None
+    max_jobs_per_run: Optional[int] = None
+    enable_outreach: Optional[bool] = None
 
 class SettingsResponse(BaseModel):
     interval_hours: int
@@ -16,6 +18,8 @@ class SettingsResponse(BaseModel):
     location: str
     resume_summary: Optional[str]
     notification_email: Optional[str]
+    max_jobs_per_run: int
+    enable_outreach: bool
 
     class Config:
         from_attributes = True
@@ -38,3 +42,6 @@ class ResumeUploadResponse(BaseModel):
 
 class SessionUpdate(BaseModel):
     storage_state: dict
+
+class LinkedInCookieUpdate(BaseModel):
+    li_at_cookie: str

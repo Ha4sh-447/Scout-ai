@@ -51,7 +51,6 @@ class MatchedJob(BaseModel):
     chunk_score: float = 0.0
     full_resume_score: float = 0.0
 
-#   Ranking signal
     recency_score: float = 0.0
     source_quality_score: float = 0.0
     final_score: float = 0.0

@@ -44,11 +44,10 @@ async def notification_node(state: NotificationState) -> dict:
                 "status": "notification_failed"
                 }
 def _send_email(cfg: EmailConfig, run_label: str, html_body: str) -> None:
-    """Send email via SMTP with detailed error handling."""
+    """Send email via SMTP."""
     subject = f"{cfg.subject_prefix} {run_label}"
     
     try:
-        # Validate configuration
         if not cfg.smtp_host:
             raise ValueError("SMTP host is empty. Set EMAIL_SMTP_HOST in environment")
         if not cfg.sender_email:
@@ -159,8 +158,6 @@ def _build_html(jobs: list[MatchedJob], run_label: str) -> str:
 </div>
 </body>
 </html>"""
-    # Minify simple CSS: remove newlines and extra spaces inside the style block
-    # and remove all newlines from the HTML to be extremely safe with email clients.
     return "".join(line.strip() for line in html.split("\n"))
  
  
@@ -168,7 +165,6 @@ def _job_card(job: MatchedJob) -> str:
     score_class = "high" if job.final_score >= 0.75 else ""
     score_pct   = f"{job.final_score:.0%}"
  
-    # Meta pills: location, job_type, salary, experience
     meta_items = [f"📍 {job.location}"]
     if job.job_type:
         meta_items.append(" · ".join(job.job_type))
@@ -178,18 +174,15 @@ def _job_card(job: MatchedJob) -> str:
         meta_items.append(f"⏱ {job.experience}")
     meta_html = "".join(f"<span>{m}</span>" for m in meta_items)
  
-    # Skill chips — highlight top_matching_skills
     all_skills = job.skills[:8]
     skills_html = "".join(
         f'<span class="skill">{s}</span>' for s in all_skills
     )
  
-    # Description excerpt - increased for better visibility
     desc_excerpt = (job.description or "")[:1200].rstrip()
     if len(job.description or "") > 1200:
         desc_excerpt += "…"
  
-    # Outreach draft block (only if available)
     outreach_html = ""
  
     if job.outreach_email_draft:
@@ -216,7 +209,6 @@ def _job_card(job: MatchedJob) -> str:
       <div style="font-size:10px;color:#166534;margin-top:4px;">⚠ {len(job.outreach_linkedin_draft)} / 280 chars</div>
     </div>"""
  
-    # Poster type badge
     poster_note = ""
     if job.poster_type == "agency_recruiter":
         poster_note = '<span style="color:#b45309;font-size:11px;">⚠ Via recruiter</span>'
@@ -225,7 +217,6 @@ def _job_card(job: MatchedJob) -> str:
     if job.resume_id and job.resume_id != "default":
         resume_label = f'<span style="background:#fef3c7;color:#92400e;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:8px;">Match: {job.resume_id}</span>'
 
-    # Recency indicator
     recency_html = ""
     if job.posted_at_text:
         # Clean up if it contains "Posted at" or similar
@@ -239,7 +230,6 @@ def _job_card(job: MatchedJob) -> str:
     
     platform_badge = f'<span class="platform-badge platform-{platform}">{platform_label}</span>'
 
-    # Recruiter Info
     recruiter_html = ""
     if job.recruiter:
         # Handle both object (RecruiterInfo) and dict (from JSON/Qdrant)

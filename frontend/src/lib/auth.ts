@@ -22,7 +22,8 @@ export const authOptions = {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               email: user.email,
-              password: "oauth_sync_placeholder"
+              id_token: account.id_token,
+              provider: account.provider
             }),
           });
           

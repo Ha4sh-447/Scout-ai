@@ -1,9 +1,34 @@
 import os
+import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from celery import Celery
+from celery.signals import setup_logging
 from dotenv import load_dotenv
 
-# Absolute path to .env in project root
+@setup_logging.connect
+def config_loggers(*args, **kwargs):
+    log_dir = Path("/app/data/logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter('[%(asctime)s: %(levelname)s/%(processName)s] %(name)s - %(message)s')
+    
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    
+    file_handler = RotatingFileHandler(
+        log_dir / "celery_pipeline.log", 
+        maxBytes=10*1024*1024, # 10MB
+        backupCount=5
+    )
+    file_handler.setFormatter(formatter)
+    
+    logger.handlers.clear()
+    logger.addHandler(stream_handler)
+    logger.addHandler(file_handler)
+
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

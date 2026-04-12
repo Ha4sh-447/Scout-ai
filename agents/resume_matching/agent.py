@@ -56,18 +56,15 @@ async def _match_all(
     resume_id: str | None = None,
 ) -> list[MatchedJob]:
 
-    logger.info(f"[stage_1] Chunk filtering {len(jobs)} jobs (resume: {resume_id})")
     stage1_results = await _stage1_chunk_filter(jobs, user_id, qdrant_cfg, matching_cfg, resume_id=resume_id)
     logger.info(f"[stage_1] {len(stage1_results)} jobs passed min_score filter")
 
     if not stage1_results:
         return []
 
-    # Cap at rerank_top_n to avoid spending embed calls on borderline matches
     candidates = stage1_results[: matching_cfg.rerank_top_n]
     rest       = stage1_results[matching_cfg.rerank_top_n :]
 
-    logger.info(f"[stage_2] Reranking top {len(candidates)} jobs against full resume")
     reranked = await _stage2_rerank(candidates, user_id, qdrant_cfg, matching_cfg)
 
     final = reranked + rest
@@ -82,11 +79,7 @@ async def _stage1_chunk_filter(
     matching_cfg: ResumeMatchingConfig,
     resume_id: str | None = None,
 ) -> list[MatchedJob]:
-    """
-    Query resume_chunks for each job concurrently.
-    Returns MatchedJob list (with chunk_score as match_score), sorted desc.
-    Drops jobs below min_match_score.
-    """
+    """Query resume_chunks for each job concurrently."""
     survivors: list[MatchedJob] = []
     semaphore = asyncio.Semaphore(10)
 
@@ -139,13 +132,11 @@ async def _chunk_score_job(
     if chunk_score < cfg.min_match_score:
         return None
 
-    # Skill overlap
     matched_text = " ".join(
         c.get("information", c.get("text", "")) for c in chunks
     ).lower()
     top_skills = [s for s in job.skills if s.lower() in matched_text]
 
-    # Apply skill matching penalty
     final_score = _apply_skill_adjustment(chunk_score, job.skills, top_skills)
 
     if final_score < cfg.min_match_score:
@@ -175,13 +166,7 @@ async def _stage2_rerank(
     qdrant_cfg: QdrantConfig,
     matching_cfg: ResumeMatchingConfig,
 ) -> list[MatchedJob]:
-    """
-    For each surviving job, query the resume_full collection to get a
-    whole-resume similarity score, then blend with the Stage 1 chunk score.
-
-    final_score = (chunk_score * (1 - w)) + (full_score * w)
-    where w = matching_cfg.full_resume_weight (default 0.35)
-    """
+    """Query full resume for reranking."""
     semaphore = asyncio.Semaphore(10)
     w = matching_cfg.full_resume_weight
 
@@ -227,15 +212,7 @@ async def _stage2_rerank(
 
 
 def _aggregate_chunk_scores(chunks: list[dict]) -> tuple[float, str]:
-    """
-    Density-Based Selection:
-    1. Group chunks by resume_id.
-    2. For each resume, calculate:
-       - max_score (best single match)
-       - weighted_avg_top_3 (average of top 3 hits, considering section weights)
-    3. Final score = 0.4 * max_score + 0.6 * weighted_avg_top_3
-    4. Return (winning_score, winning_resume_id)
-    """
+    """Density-Based Selection logic."""
     if not chunks:
         return 0.0, "default"
 
@@ -248,13 +225,10 @@ def _aggregate_chunk_scores(chunks: list[dict]) -> tuple[float, str]:
 
     resume_results = {}
     for rid, resume_chunks in resumes.items():
-        # Sort chunks by score descending
         resume_chunks.sort(key=lambda x: x.get("score", 0.0), reverse=True)
         
-        # Max score (peak match)
         max_s = resume_chunks[0].get("score", 0.0)
         
-        # Weighted average of top 3
         top_3 = resume_chunks[:3]
         total_score = 0.0
         total_weight = 0.0
@@ -270,7 +244,6 @@ def _aggregate_chunk_scores(chunks: list[dict]) -> tuple[float, str]:
             
         avg_s = total_score / total_weight if total_weight > 0 else 0.0
         
-        # Combine: Density (consistency) + Peak (precision)
         final_s = (0.4 * max_s) + (0.6 * avg_s)
         resume_results[rid] = final_s
 

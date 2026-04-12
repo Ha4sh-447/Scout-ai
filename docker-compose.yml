@@ -14,11 +14,12 @@ services:
     ports:
       - "8001:8001"
     environment:
-      DATABASE_URL: "postgresql+asyncpg://harsh:Harsh%40%241711@db:5432/job_agent"
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: "redis://redis:6379/0"
       CELERY_BROKER_URL: "redis://redis:6379/0"
       QDRANT_URL: "http://qdrant:6333"
       MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY}
@@ -38,8 +39,8 @@ services:
     image: qdrant/qdrant
     container_name: qdrant
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
@@ -66,7 +67,7 @@ services:
   db:
     image: postgres:18-alpine
     container_name: job_finder_db
-    environment: 
+    environment:
       POSTGRES_USER: ${DB_USER:-harsh}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME:-job_agent}
@@ -79,17 +80,21 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-harsh} -d ${DB_NAME:-job_agent}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB_USER:-harsh} -d ${DB_NAME:-job_agent}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 30s
-  
+
   redis:
     image: redis:7-alpine
     container_name: job_finder_redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     # Enable persistence
@@ -115,9 +120,11 @@ services:
         condition: service_healthy
     environment:
       CELERY_BROKER_URL: "redis://redis:6379/0"
-      DATABASE_URL: "postgresql+asyncpg://harsh:Harsh%40%241711@db:5432/job_agent"
+      REDIS_URL: "redis://redis:6379/0"
+      DATABASE_URL: ${DATABASE_URL}
       QDRANT_URL: "http://qdrant:6333"
       MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY}
       LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2}

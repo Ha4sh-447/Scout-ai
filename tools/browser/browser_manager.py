@@ -29,7 +29,6 @@ class BrowserManager:
             ],
         )
 
-        # Build context options
         import random
         from tools.browser.browser_manager import USER_AGENTS
 
@@ -43,12 +42,10 @@ class BrowserManager:
             "timezone_id": "UTC",
         }
     
-        # Add a few extra headers to look less like a bot
         context_kwargs["extra_http_headers"] = {
             "Accept-Language": "en-US,en;q=0.9",
         }
 
-        # Load session if provided (can be a file path or a raw dict)
         if self.storage_state:
             if isinstance(self.storage_state, str) and os.path.exists(self.storage_state):
                 context_kwargs["storage_state"] = self.storage_state

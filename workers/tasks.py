@@ -67,13 +67,11 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
         async with SessionLocal() as db:
             logger.info(f"[pipeline] 🔄 PIPELINE STARTED for run {run_id} (user {user_id})")
             
-            # Load user
             user_result = await db.execute(select(User).where(User.id == user_id))
             user = user_result.scalar_one_or_none()
             if not user:
                 raise ValueError(f"User {user_id} not found")
 
-            # Load settings
             settings_result = await db.execute(
                 select(UserSettings).where(UserSettings.user_id == user_id)
             )
@@ -81,7 +79,6 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
             if not settings:
                 raise ValueError(f"Settings not found for user {user_id}")
 
-            # Load links
             if custom_urls:
                 urls = custom_urls
                 platforms = list({detect_platform(u) for u in urls})
@@ -93,7 +90,6 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                 urls = [l.url for l in links]
                 platforms = list({l.platform for l in links}) if links else ["linkedin"]
 
-            # Mark run as running
             run_result = await db.execute(
                 select(PipelineRun).where(PipelineRun.id == run_id)
             )
@@ -119,7 +115,7 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                 source_quality_weight=0.075,
             )
 
-            # Stage 1: Job discovery
+            # Discovery
             all_jobs = []
             for query in (settings.search_queries or []):
                 try:
@@ -147,13 +143,15 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
 
             if all_jobs:
                 all_jobs = deduplicate_within_batch(all_jobs)
+                if getattr(settings, "max_jobs_per_run", None):
+                    all_jobs = all_jobs[:settings.max_jobs_per_run]
 
             if not all_jobs:
                 await _finish_run(db, run_id, jobs_found=0)
                 logger.info(f"[pipeline] No new jobs found for run {run_id}")
                 return
 
-            # Stage 2: Resume matching
+            # Matching
             match_result = await resume_matching_graph.ainvoke({
                 "user_id":      user_id,
                 "unique_jobs":  all_jobs,
@@ -168,7 +166,7 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                 logger.info(f"[pipeline] No jobs passed match threshold for run {run_id}")
                 return
 
-            # Stage 3: Ranking
+            # Ranking
             rank_result = await ranking_graph.ainvoke({
                 "user_id":      user_id,
                 "matched_jobs": matched_jobs,
@@ -177,16 +175,18 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
             })
             ranked_jobs = rank_result.get("ranked_jobs", [])
 
-            # Stage 4: Messaging
-            msg_result = await messaging_graph.ainvoke({
-                "user_id":          user_id,
-                "ranked_jobs":      ranked_jobs,
-                "resume_summary":   settings.resume_summary or "",
-                "jobs_with_drafts": [], "errors": [], "status": "starting",
-            })
-            jobs_with_drafts = msg_result.get("jobs_with_drafts", ranked_jobs)
+            # Messaging
+            if getattr(settings, "enable_outreach", True):
+                msg_result = await messaging_graph.ainvoke({
+                    "user_id":          user_id,
+                    "ranked_jobs":      ranked_jobs,
+                    "resume_summary":   settings.resume_summary or "",
+                    "jobs_with_drafts": [], "errors": [], "status": "starting",
+                })
+                jobs_with_drafts = msg_result.get("jobs_with_drafts", ranked_jobs)
+            else:
+                jobs_with_drafts = ranked_jobs
 
-            # Save job results to Postgres (with cross-run dedup)
             existing_hashes_result = await db.execute(
                 select(JobResult.content_hash).where(
                     JobResult.user_id == user_id,
@@ -228,7 +228,7 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
             await db.commit()
             logger.info(f"[pipeline] Saved {saved_count} new jobs ({len(jobs_with_drafts) - saved_count} duplicates skipped)")
 
-            # Stage 5: Notification
+            # Notification
             emails_sent = False
             if settings.notification_email:
                 try:
@@ -261,7 +261,7 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
             logger.info(
                 f"[pipeline] Run {run_id} complete: "
                 f"{len(all_jobs)} found, {len(matched_jobs)} matched, "
-                f"{len(ranked_jobs)} ranked"
+                f"{len(ranked_jobs)} ranked, emails_sent={emails_sent}"
             )
 
     finally:

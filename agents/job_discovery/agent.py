@@ -1,4 +1,4 @@
-"""Contains nodes for Langgraph"""
+"""job_discovery/agent.py"""
 
 from models.config import ResumeMatchingConfig
 from models.config import QdrantConfig
@@ -18,11 +18,8 @@ from agents.resume_matching.agent import resume_matching_node as _run_matching
 logger = logging.getLogger(__name__)
 
 
-# Scrapper node
 async def scrape_node(state: JobDiscoveryState) -> dict:
-    """
-    return dict of urls and RawJobData
-    """
+    """Scrape job URLs."""
     logger.info(
         f"[scrapper node] scrapping {len(state['urls'])} URLs for user {state['user_id']}"
     )
@@ -58,18 +55,8 @@ async def scrape_node(state: JobDiscoveryState) -> dict:
     }
 
 
-# Deduplicate Raw Jobs node (BEFORE parsing - dedup first, parse unique only)
 async def deduplicate_raw_node(state: JobDiscoveryState) -> dict:
-    """
-    CRITICAL: This node runs BEFORE parsing to minimize LLM calls.
-    
-    Process:
-    1. Deduplicate raw_jobs by source_url (same URL = same job)
-    2. Filter against seen_jobs store (skip previously scraped URLs)
-    3. Mark filtered jobs as seen immediately
-    
-    Result: Only new, unique raw jobs are stored for parse_node to process.
-    """
+    """Deduplicate raw jobs before parsing."""
     scraped_raw_jobs = state.get("raw_jobs", [])
     config = state.get("scraper_config") or ScraperConfig()
     
@@ -84,12 +71,13 @@ async def deduplicate_raw_node(state: JobDiscoveryState) -> dict:
     batch_dups_removed = len(scraped_raw_jobs) - len(deduplicated_raw_jobs)
     logger.info(f"[deduplicate_raw node] URL dedup: Removed {batch_dups_removed} duplicates. Remaining: {len(deduplicated_raw_jobs)}")
 
-    unique_raw_jobs_for_parsing = filter_new_raw_jobs(deduplicated_raw_jobs, config.seen_jobs_path)
+    user_id = state.get("user_id", "")
+    unique_raw_jobs_for_parsing = await filter_new_raw_jobs(deduplicated_raw_jobs, user_id)
     previously_seen = len(deduplicated_raw_jobs) - len(unique_raw_jobs_for_parsing)
     logger.info(f"[deduplicate_raw node] Seen filter: Filtered {previously_seen} previously seen URLs. Remaining: {len(unique_raw_jobs_for_parsing)}")
 
     if unique_raw_jobs_for_parsing:
-        mark_seen_raw_jobs(unique_raw_jobs_for_parsing, config.seen_jobs_path)
+        await mark_seen_raw_jobs(unique_raw_jobs_for_parsing, user_id)
         logger.info(f"[deduplicate_raw node] Marked {len(unique_raw_jobs_for_parsing)} unique jobs as SEEN")
 
     logger.info(f"[deduplicate_raw node] ===== END RAW DEDUPLICATION =====")
@@ -101,15 +89,8 @@ async def deduplicate_raw_node(state: JobDiscoveryState) -> dict:
     }
 
 
-# Parse node - ONLY processes deduplicated raw jobs from deduplicate_raw_node
 async def parse_node(state: JobDiscoveryState) -> dict:
-    """
-    Parse ONLY the unique raw jobs that passed deduplication.
-    
-    Input: unique_raw_jobs from deduplicate_raw_node (already filtered)
-    Process: LLM-based parsing to extract structured data
-    Output: parsed_jobs ready for final filtering and ranking
-    """
+    """Parse unique raw jobs into structured data."""
     unique_raw_jobs = state.get("raw_jobs", [])
     
     logger.info(f"[parse node] ===== START PARSING UNIQUE JOBS =====")
@@ -138,18 +119,8 @@ async def parse_node(state: JobDiscoveryState) -> dict:
     }
 
 
-# Final Deduplication & Filtering node (post-parsing)
 async def deduplicate_node(state: JobDiscoveryState) -> dict:
-    """
-    Final filtering stage AFTER parsing.
-    
-    Input: parsed_jobs (already LLM-parsed from unique raw jobs)
-    Process: Semantic dedup + experience/location/recency filtering
-    Output: Final job candidates for matching and ranking
-    
-    NOTE: Raw job deduplication already happened in deduplicate_raw_node,
-    so we only focus on semantic quality and user requirement filtering here.
-    """
+    """Final filtering and semantic deduplication stage."""
     parsed_jobs = state["parsed_jobs"]
     config = state.get("scraper_config") or ScraperConfig()
     logger.info(f"[deduplication node] ===== START FINAL FILTERING (POST-PARSE) =====")
@@ -239,10 +210,7 @@ async def deduplicate_node(state: JobDiscoveryState) -> dict:
 
 
 def _is_within_hours(posted_at_text: str | None, max_hours: int) -> bool:
-    """
-    Tiered recency filter.
-    Parses common strings like '2 hours ago', '14h ago', '1 day ago'.
-    """
+    """Tiered recency filter."""
     if not posted_at_text:
         return True  # If unknown, keep it for safety
     
@@ -297,8 +265,6 @@ def _parse_exp_years(exp_str: str | None) -> tuple[float, float]:
         
     return val, val
 
-# Passes qdrant_cfg + matching_cfg from state (or uses defaults)
- 
 async def resume_matching_node(state: JobDiscoveryState) -> dict:
     """
     Bridges JobDiscoveryState into ResumeMatchingState, runs the matching

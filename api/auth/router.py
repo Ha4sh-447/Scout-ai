@@ -9,6 +9,7 @@ from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth.schemas import RegisterRequest, TokenResponse
 from fastapi import APIRouter
+import httpx
 
 from db.models import User
 
@@ -56,8 +57,24 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def sync_oauth_user(body: dict, db: AsyncSession = Depends(get_db)):
     """Creates or retrieves user based on email, returns access token for OAuth signup"""
     email = body.get("email")
+    id_token = body.get("id_token")
+    provider = body.get("provider", "google")
+    
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
+        
+    if not id_token:
+        raise HTTPException(status_code=400, detail="id_token is required for syncing")
+        
+    if provider == "google":
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}")
+            if resp.status_code != 200:
+                raise HTTPException(status_code=401, detail="Invalid Google token")
+            
+            token_data = resp.json()
+            if token_data.get("email") != email:
+                raise HTTPException(status_code=401, detail="Token email mismatch")
     
     # Try to find existing user
     result = await db.execute(select(User).where(User.email == email))

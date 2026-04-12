@@ -21,9 +21,7 @@ async def open_page(
     retries: int = 3,
     wait_until: str = "domcontentloaded",
 ) -> Page:
-    """
-    Navigate to a page and return the loaded page
-    """
+    """Navigate to a page."""
     delay_range = PLATFORM_DELAYS.get(platform, (1.0, 2.0))
 
     for attempt in range(1, retries + 1):

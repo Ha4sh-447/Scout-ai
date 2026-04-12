@@ -8,10 +8,7 @@ from models.jobs import Job, RawJobData
 
 
 def compute_content_hash(job: Job) -> str:
-    """
-    Create a fingerprint from title + company + location.
-    Used for exact deduplication (same job posted twice).
-    """
+    """Create a fingerprint from title + company + location."""
     fingerprint = f"{job.title.lower().strip()}|{job.company.lower().strip()}|{job.location.lower().strip()}"
     return hashlib.md5(fingerprint.encode()).hexdigest()
 
@@ -19,16 +16,7 @@ def compute_content_hash(job: Job) -> str:
 def deduplicate_jobs(
     jobs: list[Job], seen_hashes: set[str] | None = None
 ) -> tuple[list[Job], set[str]]:
-    """
-    Remove duplicate jobs from a list.
-
-    Args:
-        jobs: list of parsed Job objects
-        seen_hashes: optional set of hashes already processed in previous runs
-
-    Returns:
-        (unique_jobs, updated_seen_hashes)
-    """
+    """Remove duplicate jobs from a list."""
     if seen_hashes is None:
         seen_hashes = set()
 
@@ -46,19 +34,13 @@ def deduplicate_jobs(
 
 
 def deduplicate_within_batch(jobs: list[Job]) -> list[Job]:
-    """
-    Dedup within a single batch without external state.
-    Good for the graph node where you don't have Redis yet.
-    """
+    """Dedup within a single batch."""
     unique, _ = deduplicate_jobs(jobs)
     return unique
 
 
 def deduplicate_raw_jobs(raw_jobs: list[RawJobData]) -> list[RawJobData]:
-    """
-    Deduplicate raw job data before parsing.
-    Uses source_url as the primary key (each URL should be a unique job posting).
-    """
+    """Deduplicate raw job data via URLs."""
     if not raw_jobs:
         return []
     
@@ -76,9 +58,7 @@ def deduplicate_raw_jobs(raw_jobs: list[RawJobData]) -> list[RawJobData]:
 
 
 async def semantic_deduplicate(jobs: list[Job]) -> list[Job]:
-    """
-    Use Mistral to catch near-duplicates that hash-based dedup misses.
-    """
+    """Catch near-duplicates miss by hash-based dedup."""
     if len(jobs) <= 1:
         return jobs
     client = Mistral() 

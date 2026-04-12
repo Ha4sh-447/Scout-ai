@@ -10,9 +10,7 @@ from models.config import MistralConfig, QdrantConfig
 
 @asynccontextmanager
 async def get_qdrant_client(cfg: QdrantConfig):
-    """
-    Connect to Qdrant using the native python async client.
-    """
+    """Connect to Qdrant."""
     client_kwargs = {}
     if cfg.url:
         client_kwargs["url"] = cfg.url
@@ -34,7 +32,6 @@ async def ensure_collection_exists(client: AsyncQdrantClient, collection_name: s
                 vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
             )
         
-        # Always try to ensure indices for filtered fields
         from qdrant_client.http.models import PayloadSchemaType
         for field in ["user_id", "resume_id"]:
             try:
@@ -44,7 +41,6 @@ async def ensure_collection_exists(client: AsyncQdrantClient, collection_name: s
                     field_schema=PayloadSchemaType.KEYWORD
                 )
             except Exception:
-                # Index might already exist
                 pass
                 
     except Exception as e:
@@ -103,10 +99,7 @@ async def qdrant_find(
     resume_id: str | None = None,
     top_k: int = 5
 ) -> list[dict]:
-    """
-    Find top k points similar to the query for a specific user.
-    Optionally filters by resume_id.
-    """
+    """Find top k points similar to the query."""
     await ensure_collection_exists(client, collection_name)
     must_conditions = [FieldCondition(key="user_id", match=MatchValue(value=user_id))]
     if resume_id:
@@ -119,7 +112,6 @@ async def qdrant_find(
         limit=top_k,
     )
 
-    # Format output to match previous structure for seamless integration
     return [
         {
             "id": hit.id,

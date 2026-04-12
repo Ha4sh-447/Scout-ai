@@ -48,7 +48,6 @@ async def ranking_node(state: RankingState) -> dict:
 
         job.final_score = round(min(max(raw_score, 0.0), 1.0),4)
 
-    # Sort jobs in decending order
     jobs.sort(key = lambda j: j.final_score, reverse=True)
     for i, job in enumerate(jobs, start=1):
         job.rank = i

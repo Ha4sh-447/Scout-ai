@@ -7,6 +7,7 @@ import os
 from alembic import context
 from logging.config import fileConfig
 from db.base import Base
+import db.models
 import asyncio
 
 config = context.config

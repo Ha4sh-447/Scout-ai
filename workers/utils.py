@@ -12,7 +12,6 @@ async def purge_user_tasks(db: AsyncSession, user_id: str):
     Marks their database records as failed with 'Superseded' message.
     """
     try:
-        # Find all active runs for this user
         result = await db.execute(
             select(PipelineRun).where(
                 PipelineRun.user_id == user_id,
@@ -26,7 +25,6 @@ async def purge_user_tasks(db: AsyncSession, user_id: str):
             if run.celery_task_id:
                 try:
                     logger.info(f"[purge] Revoking task: {run.celery_task_id}")
-                    # terminate=True kills it if it's already running
                     celery_app.control.revoke(run.celery_task_id, terminate=True)
                     logger.info(f"[purge] Revoke command sent for: {run.celery_task_id}")
                     revoked_count += 1

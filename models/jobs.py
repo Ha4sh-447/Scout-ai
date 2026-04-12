@@ -30,7 +30,6 @@ class RecruiterInfo(BaseModel):
 
 
 class Job(BaseModel):
-    # id: str | None
     title: str
     company: str
     location: str

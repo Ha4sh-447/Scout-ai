@@ -1,9 +1,4 @@
-"""
-Platform-specific listing scrapers for LinkedIn, Indeed, and Glassdoor.
-
-Extracts individual job cards from listing pages using CSS selectors.
-Each card becomes a separate RawJobData object.
-"""
+"""listing_scraper.py"""
 
 import logging
 import re
@@ -115,7 +110,6 @@ def _normalize_wellfound_url(url: str, query: str = "", location: str = "") -> s
     return f"https://wellfound.com/role/l/{role_slug}/{loc_slug}"
 
 
-# ── Card extractors ──────────────────────────────────────────────────────────
 
 
 async def _extract_linkedin_cards(page: Page, max_cards: int = 30) -> list[dict]:
@@ -129,14 +123,12 @@ async def _extract_linkedin_cards(page: Page, max_cards: int = 30) -> list[dict]
     page_title = await page.title()
     logger.info(f"[listing_scraper] LinkedIn page loaded: title='{page_title}', url={current_url}")
 
-    # --- Try guest/public view selectors first ---
     cards = await page.query_selector_all(".base-card")
 
     if cards:
         logger.info(f"[listing_scraper] LinkedIn: detected GUEST view ({len(cards)} .base-card elements)")
         return await _extract_linkedin_guest_cards(cards, max_cards)
 
-    # --- Fallback: authenticated/logged-in view ---
     auth_cards = await page.query_selector_all(
         "li.scaffold-layout__list-item .job-card-container, "
         "li.jobs-search-results__list-item, "
@@ -148,13 +140,11 @@ async def _extract_linkedin_cards(page: Page, max_cards: int = 30) -> list[dict]
         logger.info(f"[listing_scraper] LinkedIn: detected AUTH view ({len(auth_cards)} job-card elements)")
         return await _extract_linkedin_auth_cards(auth_cards, max_cards)
 
-    # --- Last resort: grab any link that looks like a job posting ---
     job_links = await page.query_selector_all('a[href*="/jobs/view/"]')
     if job_links:
         logger.info(f"[listing_scraper] LinkedIn: fallback - found {len(job_links)} job links on page")
         return await _extract_linkedin_fallback_links(page, job_links, max_cards)
 
-    # --- DIAGNOSTIC: dump page info when nothing found ---
     logger.warning(f"[listing_scraper] LinkedIn: 0 cards found with ALL selectors!")
     logger.warning(f"[listing_scraper] Page title: '{page_title}'")
     logger.warning(f"[listing_scraper] Final URL: {current_url}")

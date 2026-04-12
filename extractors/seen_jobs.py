@@ -1,141 +1,65 @@
 """
-Cross-run seen-jobs persistence.
+Cross-run seen-jobs persistence using Redis.
 
-Stores source URLs of previously scraped raw jobs in a JSON file.
+Stores source URLs of previously scraped raw jobs in a Redis SET per user.
 On future runs, jobs already in the store are filtered out so the user
-only sees new listings. Works with RawJobData before parsing for efficient comparison.
-Entries older than 30 days are auto-pruned.
+only sees new listings.
+Entries older than 30 days are auto-pruned via Redis key expiry tracking (renewed per user).
 """
 
-import json
-import logging
 import os
-from datetime import datetime, timedelta
+import logging
+from redis.asyncio import Redis
 
 from models.jobs import RawJobData
 
 logger = logging.getLogger(__name__)
 
-PRUNE_AFTER_DAYS = 30
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
 
-
-def _load_store(path: str) -> dict:
-    """Load the seen-jobs JSON file. Returns {} if missing or corrupt."""
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        logger.warning(f"[seen_jobs] Corrupt store at {path}, starting fresh")
-        return {}
-
-
-def _save_store(path: str, store: dict) -> None:
-    """Save the seen-jobs store to disk."""
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(store, f, indent=2)
-
-
-def _prune_old_entries(store: dict) -> dict:
-    """Remove entries older than PRUNE_AFTER_DAYS."""
-    cutoff = (datetime.now() - timedelta(days=PRUNE_AFTER_DAYS)).isoformat()
-    pruned = {
-        h: info for h, info in store.items()
-        if info.get("first_seen", "") >= cutoff
-    }
-    removed = len(store) - len(pruned)
-    if removed > 0:
-        logger.info(f"[seen_jobs] Pruned {removed} entries older than {PRUNE_AFTER_DAYS} days")
-    return pruned
-
-
-def filter_new_raw_jobs(raw_jobs: list[RawJobData], seen_path: str) -> list[RawJobData]:
+async def filter_new_raw_jobs(raw_jobs: list[RawJobData], user_id: str) -> list[RawJobData]:
     """
-    Filter out raw jobs already scraped in previous runs.
-    Uses source_url as the unique key for comparison.
-    Returns only raw jobs whose source_url is not in the seen store.
-    
-    This filtering happens BEFORE parsing, saving expensive LLM calls.
+    Filter out raw jobs already scraped in previous runs using Redis.
+    Key: seen_jobs:{user_id}
     """
-    store = _load_store(seen_path)
-    store = _prune_old_entries(store)
+    if not user_id or not raw_jobs:
+        return raw_jobs
 
     new_raw_jobs = []
+    key = f"seen_jobs:{user_id}"
+    
+    pipe = redis_client.pipeline()
     for raw_job in raw_jobs:
         url_key = raw_job.source_url.lower().strip()
-        if url_key not in store:
+        pipe.sismember(key, url_key)
+        
+    results = await pipe.execute()
+    
+    for raw_job, is_member in zip(raw_jobs, results):
+        if not is_member:
             new_raw_jobs.append(raw_job)
 
     skipped = len(raw_jobs) - len(new_raw_jobs)
     if skipped > 0:
-        logger.info(f"[seen_jobs] Filtered out {skipped} previously seen raw jobs (by source_url)")
+        logger.info(f"[seen_jobs] Filtered out {skipped} previously seen raw jobs for {user_id}")
 
     return new_raw_jobs
 
 
-def mark_seen_raw_jobs(raw_jobs: list[RawJobData], seen_path: str) -> None:
+async def mark_seen_raw_jobs(raw_jobs: list[RawJobData], user_id: str) -> None:
     """
-    Mark raw jobs as seen by storing their source URLs in the seen store.
-    This approach is simpler and faster than parsing-based comparison.
+    Mark raw jobs as seen in Redis.
     """
-    store = _load_store(seen_path)
-    now = datetime.now().isoformat()
-
-    for raw_job in raw_jobs:
-        url_key = raw_job.source_url.lower().strip()
-        if url_key not in store:
-            store[url_key] = {
-                "url": raw_job.source_url,
-                "platform": raw_job.source_platform,
-                "first_seen": now,
-            }
-
-    _save_store(seen_path, store)
-    logger.info(f"[seen_jobs] Raw job store now has {len(store)} entries (saved to {seen_path})")
-
-
-# Keep legacy parsed job functions for backward compatibility
-def filter_new_jobs(jobs, seen_path: str):
-    """
-    Legacy: Filter parsed jobs against the seen store.
-    Now uses raw job keys internally, but accepts parsed Job objects.
-    """
-    store = _load_store(seen_path)
-    store = _prune_old_entries(store)
-
-    new_jobs = []
-    for job in jobs:
-        # For parsed jobs, we try to match by URL if available, otherwise skip
-        url_key = getattr(job, 'source_url', '').lower().strip() if hasattr(job, 'source_url') else None
-        if url_key and url_key not in store:
-            new_jobs.append(job)
-
-    skipped = len(jobs) - len(new_jobs)
-    if skipped > 0:
-        logger.info(f"[seen_jobs] Filtered out {skipped} previously seen parsed jobs")
-
-    return new_jobs
-
-
-def mark_seen(jobs, seen_path: str) -> None:
-    """
-    Legacy: Mark parsed jobs as seen.
-    Now uses raw job approach (source_url as key).
-    """
-    store = _load_store(seen_path)
-    now = datetime.now().isoformat()
-
-    for job in jobs:
-        # Try to use source_url if available
-        url_key = getattr(job, 'source_url', '').lower().strip() if hasattr(job, 'source_url') else None
-        if url_key and url_key not in store:
-            store[url_key] = {
-                "url": url_key,
-                "title": getattr(job, 'title', ''),
-                "first_seen": now,
-            }
-
-    _save_store(seen_path, store)
-    logger.info(f"[seen_jobs] Store now has {len(store)} entries (saved to {seen_path})")
+    if not user_id or not raw_jobs:
+        return
+        
+    key = f"seen_jobs:{user_id}"
+    url_keys = [raw_job.source_url.lower().strip() for raw_job in raw_jobs]
+    
+    if url_keys:
+        await redis_client.sadd(key, *url_keys)
+        # Keep tracking jobs for 30 days for this user
+        await redis_client.expire(key, 2592000)
+        
+    logger.info(f"[seen_jobs] Marked {len(url_keys)} raw jobs as seen for {user_id}")

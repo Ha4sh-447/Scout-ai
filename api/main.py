@@ -83,9 +83,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+frontend_origin = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[frontend_origin],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -95,17 +97,6 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(jobs_router)
 app.include_router(scrapers_router)
-
-@app.get("/debug/env")
-async def debug_env():
-    import os
-    s = os.environ.get("JWT_SECRET_KEY", "MISSING")
-    masked_s = f"{s[0]}...{s[-1]}" if len(s) > 2 else s
-    return {
-        "REDIS_URL": os.environ.get("REDIS_URL"), 
-        "DATABASE_URL": os.environ.get("DATABASE_URL"),
-        "JWT_SECRET_KEY_MASKED": masked_s
-    }
 
 @app.get("/")
 async def root():

@@ -10,10 +10,10 @@ class ScraperConfig(BaseModel):
         description="Number of jobs to process concurrently at a time before waiting",
     )
     batch_delay_range: tuple[float, float] = Field(
-        default=(3.0, 8.0), description="Min/Max random sleep seconds between batches"
+        default=(10.0, 20.0), description="Min/Max random sleep seconds between batches"
     )
     url_delay_range: tuple[float, float] = Field(
-        default=(3.0, 8.0), description="Min/Max random sleep seconds between URLs"
+        default=(5.0, 12.0), description="Min/Max random sleep seconds between URLs"
     )
     enrich_jobs: bool = Field(
         default=True,
@@ -60,7 +60,7 @@ class ResumeMatchingConfig(BaseModel):
         default=5, description="Number of resume chunks to retrieve"
     )
 
-    # Resume reranking fields
+    # Resume reranking
     full_resume_weight: float = Field(
         default=0.35, description="Contribution of full resume score to final score"
     )
@@ -68,7 +68,6 @@ class ResumeMatchingConfig(BaseModel):
         default=20, description=" Rerank top n jobs after passing stage 1"
     )
 
-    # PDF chunking
     chunk_size: int = Field(default=1200, description="Size of each chunk")
     overlap_count: int = Field(
         default=200, description=" Count of overlapping words between each chunk"

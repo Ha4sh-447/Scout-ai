@@ -41,3 +41,4 @@ pdfplumber
 
 # Configuration & Environment
 python-dotenv
+groq

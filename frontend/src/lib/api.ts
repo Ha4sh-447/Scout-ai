@@ -32,12 +32,10 @@ export async function triggerPipeline(
   token: string = ""
 ) {
   const body = {
-    // Search parameters
     queries: params?.queries || [],
     location: params?.location || undefined,
     experience: params?.experience || undefined,
     urls: params?.urls || [],
-    // Scheduling parameters
     is_scheduled: schedulingOptions.is_scheduled === true,  // Explicitly convert to boolean
     interval_hours: schedulingOptions.interval_hours || 3,
   };
@@ -78,6 +76,19 @@ export async function updateSettings(settings: any, token: string) {
     body: JSON.stringify(settings),
   });
   if (!res.ok) throw new Error("Failed to update settings");
+  return res.json();
+}
+
+export async function updateLinkedinCookie(cookie: string, token: string) {
+  const res = await fetch(`${API_URL}/users/settings/linkedin-cookie`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ li_at_cookie: cookie }),
+  });
+  if (!res.ok) throw new Error("Failed to update LinkedIn cookie");
   return res.json();
 }
 

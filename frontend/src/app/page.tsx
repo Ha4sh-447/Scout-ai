@@ -1,216 +1,306 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ChevronRight, ArrowUpRight } from "lucide-react";
+import { ChevronRight, Search, FileText, Globe, Mail, Zap, BarChart3, Shield, Clock, CheckCircle, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-background selection:bg-indigo-500/30 overflow-hidden relative">
+    <div className="min-h-screen bg-background selection:bg-emerald-500/30 overflow-hidden relative font-sans">
       <div className="absolute inset-0 hero-gradient pointer-events-none" />
-      
-      {/* Navbar - Minimal */}
-      <nav className="fixed top-0 w-full z-50 px-6 py-6 bg-background/50 backdrop-blur-xl">
+
+      {/* Navbar */}
+      <nav className="fixed top-0 w-full z-50 px-6 py-5 bg-background/60 backdrop-blur-xl border-b border-white/5">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center font-bold text-black text-sm">S</div>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center font-black text-black text-sm">S</div>
             <span className="text-xl font-bold tracking-tight">Scout AI</span>
           </div>
-          <div className="flex items-center gap-8 text-sm font-medium">
-            <Link href="/auth/login" className="text-muted hover:text-white transition-colors">
+          <div className="hidden md:flex items-center gap-10 text-sm font-medium text-slate-400">
+            <a href="#features" className="hover:text-white transition-colors">Features</a>
+            <a href="#how" className="hover:text-white transition-colors">How It Works</a>
+          </div>
+          <div className="flex items-center gap-3 text-sm font-medium">
+            <Link href="/auth/login" className="text-slate-400 hover:text-white transition-colors px-4 py-2">
               Sign In
             </Link>
-            <Link href="/auth/login" className="px-6 py-2 bg-white hover:bg-emerald-50 rounded-full text-black font-bold transition-all active:scale-95">
-              Launch App
+            <Link href="/auth/login" className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 rounded-lg text-black font-black transition-all active:scale-95">
+              Get Started →
             </Link>
           </div>
         </div>
       </nav>
 
-      {/* Hero Section - The "Pitch" */}
-      <main className="relative pt-48 pb-32">
-        <div className="max-w-[1100px] mx-auto px-6">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-            className="flex flex-col items-center text-center"
-          >
-            <span className="inline-flex items-center px-4 py-1.5 mb-10 rounded-full bg-emerald-500/10 border border-emerald-500/15 text-emerald-400 text-[10px] font-black tracking-[0.1em] uppercase">
-              Autonomous Intelligence
-            </span>
-            
-            <h1 className="text-[52px] md:text-[88px] font-[700] tracking-[-0.04em] mb-10 leading-[0.98] text-balance">
-              The only agent that <br />
-              truly <span className="text-emerald-500">finds you work.</span>
-            </h1>
-            
-            <p className="text-muted text-lg md:text-xl max-w-[650px] mb-14 leading-relaxed font-medium">
-              Scout AI scans the market 24/7, matching your profile against 
-              hidden opportunities and sending you perfectly tailored 
-              referrals before they hit the mainstream.
-            </p>
-            
-            <div className="flex flex-col sm:flex-row items-center gap-6">
-              <Link 
-                href="/auth/login" 
-                className="group px-10 py-5 bg-emerald-500 text-black hover:bg-emerald-400 rounded-full font-black text-lg transition-all active:scale-95 flex items-center gap-3 shadow-2xl shadow-emerald-500/20"
-              >
-                Get Started <ChevronRight size={22} className="group-hover:translate-x-1 transition-transform" />
-              </Link>
-              <Link 
-                href="#how" 
-                className="px-10 py-5 bg-secondary border-reveal rounded-full font-black text-lg transition-all active:scale-95 flex items-center gap-3 text-slate-400 hover:text-white"
-              >
-                Watch Demo
-              </Link>
+      <main className="relative">
+        {/* Hero */}
+        <section className="pt-44 pb-28 px-6">
+          <div className="max-w-5xl mx-auto text-center">
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, ease: "easeOut" }}
+            >
+              <span className="inline-flex items-center gap-2 px-4 py-1.5 mb-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-black tracking-[0.12em] uppercase">
+                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                AI-Powered Job Agent
+              </span>
+
+              <h1 className="text-5xl md:text-[80px] font-black tracking-[-0.04em] mb-8 leading-[1.0] text-balance">
+                Your personal recruiter,<br />
+                <span className="text-emerald-400">running 24/7.</span>
+              </h1>
+
+              <p className="text-slate-400 text-lg md:text-xl max-w-[600px] mx-auto mb-10 leading-relaxed">
+                Scout AI scans LinkedIn, Wellfound, and more — matching your resume against live listings, ranking them, 
+                and sending you a tailored job digest every day.
+              </p>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <Link
+                  href="/auth/login"
+                  className="group px-8 py-4 bg-emerald-500 text-black hover:bg-emerald-400 rounded-xl font-black text-base transition-all active:scale-95 flex items-center gap-2 shadow-2xl shadow-emerald-500/20"
+                >
+                  Start Scouting Free <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                </Link>
+                <a
+                  href="#how"
+                  className="px-8 py-4 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-xl font-semibold text-slate-300 text-base transition-all active:scale-95"
+                >
+                  See how it works
+                </a>
+              </div>
+            </motion.div>
+
+            {/* Social proof strip */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5 }}
+              className="mt-16 flex items-center justify-center gap-8 text-slate-600 text-xs font-semibold uppercase tracking-widest flex-wrap"
+            >
+              <span className="flex items-center gap-2"><CheckCircle size={12} className="text-emerald-500" /> No credit card required</span>
+              <span className="flex items-center gap-2"><CheckCircle size={12} className="text-emerald-500" /> Runs on free-tier LLMs</span>
+              <span className="flex items-center gap-2"><CheckCircle size={12} className="text-emerald-500" /> Fully open-source</span>
+            </motion.div>
+          </div>
+        </section>
+
+        {/* Features Grid */}
+        <section id="features" className="py-28 px-6">
+          <div className="max-w-7xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="text-center mb-20"
+            >
+              <span className="inline-flex items-center px-4 py-1.5 mb-5 rounded-full bg-emerald-500/10 border border-emerald-500/15 text-emerald-400 text-[11px] font-black tracking-[0.12em] uppercase">
+                Features
+              </span>
+              <h2 className="text-4xl md:text-5xl font-black tracking-[-0.04em] mb-5 text-balance">
+                Everything you need to land faster
+              </h2>
+              <p className="text-slate-400 text-lg max-w-[560px] mx-auto">
+                A complete, automated pipeline from job discovery to personalized outreach.
+              </p>
+            </motion.div>
+
+            <div className="grid md:grid-cols-3 gap-5">
+              {FEATURES.map((f, i) => (
+                <motion.div
+                  key={f.title}
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.06 }}
+                  className={`group relative rounded-2xl p-7 border transition-all cursor-default ${f.highlight
+                    ? "bg-emerald-500/10 border-emerald-500/30 hover:border-emerald-400/50"
+                    : "bg-slate-900/60 border-slate-800 hover:border-slate-600"
+                  }`}
+                >
+                  {f.highlight && (
+                    <span className="absolute top-4 right-4 px-2 py-0.5 bg-emerald-500 text-black text-[9px] font-black rounded-full uppercase tracking-widest">
+                      Core
+                    </span>
+                  )}
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-5 ${f.highlight ? "bg-emerald-500/20" : "bg-slate-800"}`}>
+                    <f.icon size={20} className={f.highlight ? "text-emerald-400" : "text-slate-400"} />
+                  </div>
+                  <h3 className="text-white font-bold text-lg mb-2">{f.title}</h3>
+                  <p className="text-slate-400 text-sm leading-relaxed">{f.desc}</p>
+                </motion.div>
+              ))}
             </div>
-          </motion.div>
+          </div>
+        </section>
 
-          {/* Simple Feature Preview - Box Spacing Focus */}
-          <motion.div 
-            initial={{ opacity: 0, y: 40 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="mt-32 grid md:grid-cols-3 gap-6"
-          >
-            <MinimalCard 
-              num="01"
-              title="Connect"
-              description="Upload your resume and links. Our agent analyzes your profile in seconds."
-            />
-            <MinimalCard 
-              num="02"
-              title="Scout"
-              description="Your personal agent scans LinkedIn, Wellfound, and hidden boards 24/7."
-            />
-            <MinimalCard 
-              num="03"
-              title="Apply"
-              description="Get a daily digest with pre-generated outreach. Just click and apply."
-            />
-          </motion.div>
-
-          {/* How It Works - Detailed Steps */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="mt-48"
-          >
-            <div className="text-center mb-20">
-              <span className="inline-flex items-center px-4 py-1.5 mb-6 rounded-full bg-emerald-500/10 border border-emerald-500/15 text-emerald-400 text-[10px] font-black tracking-[0.1em] uppercase">
+        {/* How It Works */}
+        <section id="how" className="py-28 px-6 border-t border-white/5">
+          <div className="max-w-4xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="text-center mb-20"
+            >
+              <span className="inline-flex items-center px-4 py-1.5 mb-5 rounded-full bg-emerald-500/10 border border-emerald-500/15 text-emerald-400 text-[11px] font-black tracking-[0.12em] uppercase">
                 How It Works
               </span>
-              <h2 className="text-4xl md:text-6xl font-bold tracking-[-0.04em] text-balance mb-6">
-                Your Complete Job Search <span className="text-emerald-500">Workflow</span>
+              <h2 className="text-4xl md:text-5xl font-black tracking-[-0.04em] mb-5 text-balance">
+                Set it up once. Let it run.
               </h2>
-              <p className="text-muted text-lg max-w-[650px] mx-auto">
-                Scout AI handles the heavy lifting with a fully automated pipeline designed to match you with the best opportunities.
+              <p className="text-slate-400 text-lg max-w-[520px] mx-auto">
+                A 3-step setup that takes under 10 minutes — then Scout runs in the background while you focus on what matters.
               </p>
-            </div>
+            </motion.div>
 
-            <div className="grid gap-8 md:gap-12">
-              <WorkflowStep
-                step={1}
-                title="Profile Analysis"
-                description="Upload your resume, LinkedIn profile, and job preferences. Our AI analyzes your skills, experience, and career goals."
-                icon="📋"
-              />
-              <WorkflowStep
-                step={2}
-                title="Market Scanning"
-                description="Scout continuously monitors LinkedIn, Wellfound, GitHub Jobs, and 50+ job boards for matching positions."
-                icon="🔍"
-              />
-              <WorkflowStep
-                step={3}
-                title="Intelligent Matching"
-                description="Our ranking engine evaluates each job against your profile, considering salary, growth, company culture, and tech stack."
-                icon="🎯"
-              />
-              <WorkflowStep
-                step={4}
-                title="Resume Customization"
-                description="Automatically generate tailored resumes and cover letters specifically optimized for each opportunity."
-                icon="✍️"
-              />
-              <WorkflowStep
-                step={5}
-                title="Smart Outreach"
-                description="Craft personalized messages to recruiters and hiring managers with context about why you're a great fit."
-                icon="💬"
-              />
-              <WorkflowStep
-                step={6}
-                title="Daily Digest"
-                description="Receive curated opportunities in your inbox daily with one-click apply and messaging capabilities."
-                icon="📧"
-              />
+            <div className="space-y-6">
+              {HOW_STEPS.map((step, i) => (
+                <motion.div
+                  key={step.title}
+                  initial={{ opacity: 0, x: -20 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.1 }}
+                  className="flex gap-6 items-start p-6 rounded-2xl bg-slate-900/50 border border-slate-800 hover:border-slate-700 transition-colors group"
+                >
+                  <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-xl font-black text-emerald-400">
+                    {i + 1}
+                  </div>
+                  <div className="flex-1 pt-0.5">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-white font-bold text-lg">{step.title}</h3>
+                      <ArrowRight size={14} className="text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                    <p className="text-slate-400 text-sm leading-relaxed">{step.desc}</p>
+                    {step.tip && (
+                      <p className="text-emerald-400/70 text-xs mt-2 font-semibold">💡 {step.tip}</p>
+                    )}
+                  </div>
+                </motion.div>
+              ))}
             </div>
+          </div>
+        </section>
+
+        {/* CTA */}
+        <section className="py-28 px-6">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="max-w-3xl mx-auto text-center bg-gradient-to-br from-emerald-500/10 via-slate-900 to-slate-900 border border-emerald-500/20 rounded-3xl p-14"
+          >
+            <h2 className="text-4xl md:text-5xl font-black tracking-[-0.04em] mb-5 text-balance">
+              Stop searching. Start<br /><span className="text-emerald-400">getting found.</span>
+            </h2>
+            <p className="text-slate-400 text-lg mb-10 max-w-lg mx-auto">
+              Upload your resume, add some links, and let Scout do the rest. Your next job might already be waiting.
+            </p>
+            <Link
+              href="/auth/login"
+              className="inline-flex items-center gap-2 px-10 py-5 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-lg rounded-xl transition-all active:scale-95 shadow-2xl shadow-emerald-500/20"
+            >
+              Launch Scout AI <ChevronRight size={20} />
+            </Link>
           </motion.div>
-        </div>
+        </section>
       </main>
 
-      <footer className="py-20 border-t border-white/5 opacity-40">
-        <div className="max-w-7xl mx-auto px-6 flex justify-between items-center text-xs font-medium uppercase tracking-widest">
-            <span>&copy; 2026 Scout AI Platform</span>
-            <div className="flex gap-8">
-                <a href="#" className="hover:text-indigo-400">GitHub</a>
-                <a href="#" className="hover:text-indigo-400">Privacy</a>
-            </div>
+      <footer className="py-10 border-t border-white/5">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4 text-xs font-medium text-slate-600 uppercase tracking-widest">
+          <span>© 2026 Scout AI Platform</span>
+          <div className="flex gap-8">
+            <a href="#" className="hover:text-slate-400 transition-colors">GitHub</a>
+            <a href="#" className="hover:text-slate-400 transition-colors">Privacy</a>
+          </div>
         </div>
       </footer>
     </div>
   );
 }
 
-function MinimalCard({ num, title, description }: { num: string, title: string, description: string }) {
-  return (
-    <div className="group p-10 rounded-[28px] bg-secondary border-reveal hover:bg-emerald-500/[0.02] transition-colors">
-      <div className="text-[12px] font-black text-emerald-500 mb-8 tracking-widest opacity-40 group-hover:opacity-100 transition-opacity uppercase">{num}</div>
-      <h3 className="text-2xl font-bold mb-5 flex items-center gap-3">
-        {title} <ArrowUpRight size={20} className="opacity-0 group-hover:opacity-100 -translate-y-1 translate-x-1 transition-all" />
-      </h3>
-      <p className="text-muted text-base leading-relaxed font-medium">{description}</p>
-    </div>
-  );
-}
+const FEATURES = [
+  {
+    icon: Search,
+    title: "Multi-Platform Scraping",
+    desc: "Automatically scrapes LinkedIn, Indeed, Wellfound, Glassdoor, and Reddit based on your saved search URLs.",
+    highlight: true,
+  },
+  {
+    icon: FileText,
+    title: "Resume Matching",
+    desc: "Uses vector embeddings to semantically match your resume against every job description for a true fit score.",
+    highlight: true,
+  },
+  {
+    icon: BarChart3,
+    title: "AI-Powered Ranking",
+    desc: "Jobs are ranked by a weighted score combining match quality, recency, and source quality.",
+    highlight: true,
+  },
+  {
+    icon: Mail,
+    title: "Email Digests",
+    desc: "Get a beautifully formatted HTML email with your top matches and ready-to-send outreach drafts.",
+    highlight: false,
+  },
+  {
+    icon: Zap,
+    title: "Outreach Drafting",
+    desc: "Generates personalized LinkedIn messages and cold emails for each matched job, powered by LLMs.",
+    highlight: false,
+  },
+  {
+    icon: Globe,
+    title: "Authenticated Scraping",
+    desc: "Save your LinkedIn/Wellfound browser session to unlock personalized job feeds and bypass guest-mode limits.",
+    highlight: false,
+  },
+  {
+    icon: Clock,
+    title: "Scheduled Runs",
+    desc: "Set up recurring pipeline runs on any interval — hourly, daily, or weekly.",
+    highlight: false,
+  },
+  {
+    icon: Shield,
+    title: "Deduplication",
+    desc: "Smart content hashing ensures you never see the same job twice, even across multiple pipeline runs.",
+    highlight: false,
+  },
+  {
+    icon: FileText,
+    title: "Multi-Resume Support",
+    desc: "Upload multiple resumes for different roles. Scout picks the best match automatically.",
+    highlight: false,
+  },
+];
 
-function WorkflowStep({ step, title, description, icon }: { step: number, title: string, description: string, icon: string }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      whileInView={{ opacity: 1, x: 0 }}
-      viewport={{ once: true }}
-      transition={{ delay: step * 0.1 }}
-      className="group relative"
-    >
-      {/* Connector line for all except last */}
-      {step < 6 && (
-        <div className="absolute left-[44px] top-[100px] w-1 h-12 bg-gradient-to-b from-emerald-500/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-      )}
-
-      <div className="flex gap-8 items-start">
-        {/* Step Circle */}
-        <div className="relative flex-shrink-0">
-          <motion.div
-            whileHover={{ scale: 1.1 }}
-            className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-3xl shadow-lg shadow-emerald-500/20"
-          >
-            {icon}
-          </motion.div>
-          <div className="absolute -bottom-2 -right-2 w-7 h-7 rounded-full bg-background border-2 border-emerald-500 flex items-center justify-center text-xs font-bold text-emerald-400">
-            {step}
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 pt-4">
-          <h3 className="text-2xl font-bold mb-3 group-hover:text-emerald-400 transition-colors">{title}</h3>
-          <p className="text-muted text-base leading-relaxed max-w-[600px]">{description}</p>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
+const HOW_STEPS = [
+  {
+    title: "Upload your resume",
+    desc: "Go to 'My Resumes' and upload a PDF. Scout will extract your skills, experience, and goals using AI.",
+    tip: "Upload one resume per target role for best results.",
+  },
+  {
+    title: "Add your search URLs",
+    desc: "Paste LinkedIn, Indeed, or Wellfound search URLs into 'Saved Search URLs'. These are the pages Scout will scan on every run.",
+    tip: "Use filtered search URLs (location, experience) for more precise results.",
+  },
+  {
+    title: "Configure your preferences",
+    desc: "Set your target location, experience level, notification email, and search queries in Preferences.",
+    tip: "Add your LinkedIn li_at cookie in Preferences for authenticated results.",
+  },
+  {
+    title: "Trigger your first scan",
+    desc: "Click 'New Agent Run' from the header or 'Trigger Scan' from the Overview. The pipeline runs in the background.",
+    tip: "Enable the scheduler to have scans run automatically on a schedule.",
+  },
+  {
+    title: "Review your matches",
+    desc: "Check 'Matched Jobs' for your ranked results. Each job shows a match score, skills alignment, and outreach drafts.",
+    tip: "Check 'Pipeline History' to monitor run status and see how many jobs were found.",
+  },
+];

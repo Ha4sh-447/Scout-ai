@@ -2,7 +2,6 @@ import re
 
 from playwright.async_api import Page
 
-# Per-platform CSS selectors for the main job content area
 CONTENT_SELECTORS = {
     "linkedin": [
         ".job-view-layout",
@@ -24,9 +23,7 @@ CONTENT_SELECTORS = {
 
 
 async def extract_text(page: Page, platform: str = "generic") -> str:
-    """
-    Extract visible text from a job page.
-    """
+
     selectors = CONTENT_SELECTORS.get(platform, CONTENT_SELECTORS["generic"])
     for selector in selectors:
         try:
@@ -37,15 +34,12 @@ async def extract_text(page: Page, platform: str = "generic") -> str:
         except Exception:
             continue
 
-    # take full body text if the above clause fails
     text = await page.inner_text("body")
     return _clean_text(text)
 
 
 async def extract_html(page: Page, platform: str = "generic") -> str:
-    """
-    Extract raw html content for LLM's
-    """
+
     selectors = CONTENT_SELECTORS.get(platform, CONTENT_SELECTORS["generic"])
 
     for selector in selectors:
@@ -61,9 +55,7 @@ async def extract_html(page: Page, platform: str = "generic") -> str:
 
 
 def _clean_text(text: str) -> str:
-    """
-    Remove whitespace and blank lines
-    """
+
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r" {2,}", " ", text)
     return text.strip()

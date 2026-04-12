@@ -10,7 +10,7 @@ def get_mistral_client():
         raise RuntimeError("MISTRAL_API_KEY is not set in environment variables.")
     return Mistral(api_key=_api_key)
 
-_client = None # Lazily initialized
+_client = None
 
 EMBED_MODEL = "mistral-embed"
 

@@ -10,7 +10,7 @@ import {
   Layers, CheckCircle, Clock, Mail, Briefcase,
   Loader2, X, AlertTriangle, Square, Activity, RotateCw
 } from "lucide-react";
-import { fetchJobs, fetchSettings, triggerPipeline, scrapeLinks, cancelPipeline, updateSettings, fetchRuns, uploadResume, saveSearchLinks, getSearchLinks, deleteSearchLink, triggerBrowserAuthentication, getAuthenticationStatus, clearBrowserSession, fetchResumes } from "@/lib/api";
+import { fetchJobs, fetchSettings, triggerPipeline, scrapeLinks, cancelPipeline, updateSettings, fetchRuns, uploadResume, saveSearchLinks, getSearchLinks, deleteSearchLink, triggerBrowserAuthentication, getAuthenticationStatus, clearBrowserSession, fetchResumes, updateLinkedinCookie } from "@/lib/api";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import PipelineHistory from "@/components/PipelineHistory";
@@ -20,6 +20,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("jobs");
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [liAtCookie, setLiAtCookie] = useState("");
   const [isTriggerDialogOpen, setIsTriggerDialogOpen] = useState(false);
   
   // Scoped search params
@@ -107,6 +108,10 @@ export default function Dashboard() {
       setSavedSearchLinks(linksData);
       setAuthStatus(statusData);
       setUploadedResumes(resumesData);
+      // Prefill customUrls with saved links if the field hasn't been manually set
+      if (linksData.length > 0) {
+        setCustomUrls(prev => prev.trim() ? prev : linksData.map((l: any) => l.url).join('\n'));
+      }
       setStats({
         notifications: runsData.length,
         jobsFound: jobsData.length
@@ -206,6 +211,15 @@ export default function Dashboard() {
     }
   };
 
+  const handleOpenSettings = () => {
+    if (rawSettings?.search_queries) {
+      setTempSearchQueries(rawSettings.search_queries.join(", "));
+    }
+    // Note: Other fields are directly bound to rawSettings in the JSX inputs, so they prefill automatically!
+    setLiAtCookie(""); // Ensure password field is cleared
+    setIsSettingsOpen(true);
+  };
+
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     const token = (session as any)?.user?.accessToken || "";
@@ -216,7 +230,18 @@ export default function Dashboard() {
     try {
       await updateSettings(updatedSettings, token);
       setRawSettings(updatedSettings);
-      alert("Settings saved!");
+      
+      if (liAtCookie.trim() !== "") {
+        try {
+          await updateLinkedinCookie(liAtCookie.trim(), token);
+          setLiAtCookie(""); // Clear after saving
+        } catch(err) {
+          console.error("Failed to update linkedin cookie", err);
+          alert("Settings saved, but failed to link LinkedIn session.");
+        }
+      }
+      
+      alert("Settings & Session saved!");
       setIsSettingsOpen(false);
       loadData(true); // Silent refresh
     } catch (error) {
@@ -248,7 +273,7 @@ export default function Dashboard() {
           <SidebarItem icon={<FileText size={20} />} label="My Resumes" active={activeTab === "resumes"} onClick={() => setActiveTab("resumes")} />
           <SidebarItem icon={<Globe size={20} />} label="Saved Search URLs" active={activeTab === "savedlinks"} onClick={() => setActiveTab("savedlinks")} />
           <div className="pt-8 pb-2 px-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Settings</div>
-          <SidebarItem icon={<Settings size={20} />} label="Preferences" onClick={() => setIsSettingsOpen(true)} />
+          <SidebarItem icon={<Settings size={20} />} label="Preferences" onClick={handleOpenSettings} />
         </nav>
 
         <div className="p-4 mt-auto border-t border-slate-900">
@@ -355,9 +380,20 @@ export default function Dashboard() {
                   </div>
 
                   <div className="mb-4">
-                    <label className="text-[10px] font-bold text-emerald-500 uppercase flex items-center gap-2 mb-2">
-                       <ExternalLink size={12} /> Scrape specific URLs (One per line)
-                    </label>
+                    <div className="flex justify-between items-end mb-2">
+                      <label className="text-[10px] font-bold text-emerald-500 uppercase flex items-center gap-2">
+                         <ExternalLink size={12} /> Scrape specific URLs (One per line)
+                      </label>
+                      {savedSearchLinks.length > 0 && (
+                        <button 
+                          type="button"
+                          onClick={() => setCustomUrls(savedSearchLinks.map((l: any) => l.url).join('\n'))}
+                          className="text-[10px] font-bold pb-0 text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors underline decoration-blue-500/30"
+                        >
+                          Autofill Saved Links ({savedSearchLinks.length})
+                        </button>
+                      )}
+                    </div>
                     <textarea 
                       placeholder="Paste LinkedIn, Indeed, or other job URLs here..." 
                       rows={3}
@@ -383,7 +419,9 @@ export default function Dashboard() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  onClick={() => setIsSearchExpanded(true)}
+                  onClick={() => {
+                    setIsSearchExpanded(true);
+                  }}
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 rounded-lg text-sm font-bold text-black transition-all active:scale-95 shadow-lg shadow-emerald-500/10"
                 >
                   <Plus size={18} /> New Agent Run
@@ -420,262 +458,192 @@ export default function Dashboard() {
               </div>
            </div>
 
-           {/* Conditional Tab Content */}
+
            {activeTab === "overview" ? (
              <div className="p-8 space-y-8">
-               {/* Authentication Status - Success */}
-               {authStatus?.authenticated && (
-                 <motion.div
-                   initial={{ opacity: 0, y: -20 }}
-                   animate={{ opacity: 1, y: 0 }}
-                   className="bg-gradient-to-r from-emerald-500/20 to-emerald-600/20 border border-emerald-500/30 rounded-3xl p-6 shadow-lg shadow-emerald-500/10"
-                 >
-                   <div className="flex items-start gap-4">
-                     <div className="flex-1">
-                       <h3 className="text-lg font-bold text-emerald-300 mb-2">✓ Authenticated & Ready</h3>
-                       <p className="text-emerald-200/80 text-sm mb-2">
-                         Your browser session is saved and ready. All future job scans will use your authenticated LinkedIn and Wellfound accounts automatically.
-                       </p>
-                       <p className="text-emerald-200/60 text-xs mb-4">
-                         {authStatus?.has_linkedin && 'LinkedIn ✓'}{authStatus?.has_linkedin && authStatus?.has_wellfound && ' • '}{authStatus?.has_wellfound && 'Wellfound ✓'} • No re-authentication needed
-                       </p>
-                       <button
-                         onClick={async () => {
-                           if (confirm("Clear saved session? You'll need to authenticate again.")) {
-                             const token = (session as any)?.user?.accessToken || "";
-                             try {
-                               await clearBrowserSession(token);
-                               setAuthStatus({authenticated: false});
-                               alert("Session cleared. You can authenticate again when ready.");
-                             } catch (err) {
-                               alert("Failed to clear session");
-                             }
-                           }
-                         }}
-                         className="px-6 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/50 font-semibold rounded-lg transition-colors text-sm"
-                       >
-                         Clear Session
-                       </button>
-                     </div>
-                     <CheckCircle size={24} className="text-emerald-400 flex-shrink-0 mt-1" />
-                   </div>
-                 </motion.div>
-               )}
 
-               {/* Authentication Prompt */}
-               {!authStatus?.authenticated && (
-                 <motion.div
-                   initial={{ opacity: 0, y: -20 }}
-                   animate={{ opacity: 1, y: 0 }}
-                   className="bg-gradient-to-r from-blue-500/20 to-blue-600/20 border border-blue-500/30 rounded-3xl p-6 shadow-lg shadow-blue-500/10"
-                 >
-                   <div className="flex items-start gap-4">
-                     <div className="flex-1">
-                       <h3 className="text-lg font-bold text-blue-300 mb-2">⚡ Unlock Personalized Results</h3>
-                       <p className="text-blue-200/80 text-sm mb-2">
-                         Authenticate with LinkedIn and Wellfound to get personalized job matches from your saved searches. Your logged-in session will be saved and reused automatically for all future scans.
-                       </p>
-                       <p className="text-blue-200/60 text-xs mb-4">
-                         ✓ One-time setup • Your session is saved to the database • Future scans use your authenticated account automatically
-                       </p>
-                       <button
-                         onClick={() => setActiveTab("savedlinks")}
-                         className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors"
-                       >
-                         Authenticate Now
-                       </button>
-                     </div>
-                     <AlertTriangle size={24} className="text-blue-400 flex-shrink-0 mt-1" />
-                   </div>
-                 </motion.div>
-               )}
-
-               {/* Dashboard Stats */}
-               {/* Cumulative Pipeline Stats */}
-               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                 <div className="glass p-5 rounded-2xl border border-slate-800">
-                   <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Discovered</p>
-                   <p className="text-2xl font-bold text-white">{runs.reduce((sum: number, r: any) => sum + (r.jobs_found || 0), 0)}</p>
-                   <p className="text-emerald-400 text-[10px] mt-1">Across {runs.length} run{runs.length !== 1 ? 's' : ''}</p>
-                 </div>
-                 <div className="glass p-5 rounded-2xl border border-slate-800">
-                   <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Matched</p>
-                   <p className="text-2xl font-bold text-white">{runs.reduce((sum: number, r: any) => sum + (r.jobs_matched || 0), 0)}</p>
-                   <p className="text-blue-400 text-[10px] mt-1">Resume-matched jobs</p>
-                 </div>
-                 <div className="glass p-5 rounded-2xl border border-slate-800">
-                   <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Ranked</p>
-                   <p className="text-2xl font-bold text-white">{runs.reduce((sum: number, r: any) => sum + (r.jobs_ranked || 0), 0)}</p>
-                   <p className="text-purple-400 text-[10px] mt-1">Scored &amp; ranked</p>
-                 </div>
-                 <div className="glass p-5 rounded-2xl border border-slate-800">
-                   <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Emails Sent</p>
-                   <p className="text-2xl font-bold text-white">{runs.filter((r: any) => r.emails_sent).length}</p>
-                   <p className="text-amber-400 text-[10px] mt-1">Notification digests</p>
-                 </div>
+               {/* Welcome Banner */}
+               <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-500/10 via-slate-900 to-slate-900 border border-emerald-500/20 p-8">
+                 <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-4 inline-block">
+                   <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                   {" "} Scout AI
+                 </span>
+                 <h2 className="text-2xl font-black text-white mb-2">
+                   Welcome, {session?.user?.name?.split(" ")[0] || "Scout"} 👋
+                 </h2>
+                 <p className="text-slate-400 text-sm max-w-xl">
+                   Follow the setup checklist below to get the most out of Scout AI. Once configured, your agent will run automatically and deliver curated job matches to your inbox.
+                 </p>
                </div>
 
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                 {/* Jobs Found Card */}
-                 <motion.div
-                   whileHover={{ y: -4 }}
-                   className="glass p-8 rounded-3xl border border-slate-800 hover:border-emerald-500/20 transition-colors"
-                 >
-                   <div className="flex items-start justify-between mb-4">
-                     <div>
-                       <p className="text-slate-400 text-sm mb-1">Total Jobs Found</p>
-                       <h3 className="text-4xl font-bold text-white">{stats.jobsFound}</h3>
-                     </div>
-                     <BriefcaseIcon size={32} className="text-emerald-500 opacity-20" />
-                   </div>
-                   <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold">
-                     <CheckCircle size={14} />
-                     From {runs.length} pipeline run{runs.length !== 1 ? 's' : ''}
-                   </div>
-                 </motion.div>
-
-                 {/* Resume Uploaded Card */}
-                 <motion.div
-                   whileHover={{ y: -4 }}
-                   className="glass p-8 rounded-3xl border border-slate-800 hover:border-emerald-500/20 transition-colors"
-                 >
-                   <div className="flex items-start justify-between mb-4">
-                     <div>
-                       <p className="text-slate-400 text-sm mb-1">Resumes Uploaded</p>
-                       <h3 className="text-4xl font-bold text-white">{uploadedResumes.length}</h3>
-                     </div>
-                     <FileText size={32} className="text-blue-500 opacity-20" />
-                   </div>
-                   <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold">
-                     <CheckCircle size={14} />
-                     Used for matching
-                   </div>
-                 </motion.div>
-
-                 {/* Saved URLs Card */}
-                 <motion.div
-                   whileHover={{ y: -4 }}
-                   className="glass p-8 rounded-3xl border border-slate-800 hover:border-emerald-500/20 transition-colors"
-                 >
-                   <div className="flex items-start justify-between mb-4">
-                     <div>
-                       <p className="text-slate-400 text-sm mb-1">Saved Search URLs</p>
-                       <h3 className="text-4xl font-bold text-white">{savedSearchLinks.length}</h3>
-                     </div>
-                     <Globe size={32} className="text-orange-500 opacity-20" />
-                   </div>
-                   <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold">
-                     <CheckCircle size={14} />
-                     Auto-scraped daily
-                   </div>
-                 </motion.div>
-               </div>
-
-               {/* Status Section */}
-               <div className="glass p-8 rounded-3xl border border-slate-800 space-y-6">
-                 <h3 className="text-xl font-bold text-white mb-4">System Status</h3>
-                 
-                 <div className="space-y-4">
-                   {/* Authentication Status */}
-                   <div className="flex items-center justify-between p-4 bg-slate-900 rounded-lg border border-slate-700">
-                     <div className="flex items-center gap-3">
-                       <div className={`w-3 h-3 rounded-full ${authStatus?.authenticated ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                       <div>
-                         <p className="text-white font-semibold text-sm">Browser Authentication</p>
-                         <p className="text-slate-400 text-xs">{authStatus?.authenticated ? 'LinkedIn & Wellfound authenticated' : 'Not authenticated'}</p>
+               {/* Setup Checklist */}
+               <div className="glass rounded-3xl border border-slate-800 overflow-hidden">
+                 <div className="px-8 py-5 border-b border-slate-800 flex items-center justify-between">
+                   <h3 className="text-white font-bold text-lg">Setup Checklist</h3>
+                   <span className="text-xs text-slate-500 font-semibold">
+                     {[uploadedResumes.length > 0, savedSearchLinks.length > 0, authStatus?.authenticated, !!rawSettings?.notification_email].filter(Boolean).length} / 4 complete
+                   </span>
+                 </div>
+                 <div className="p-6 space-y-4">
+                   {[
+                     {
+                       done: uploadedResumes.length > 0,
+                       step: "01",
+                       title: "Upload a Resume",
+                       desc: "Scout uses your resume to semantically match against job descriptions. Upload a PDF under 'My Resumes'.",
+                       tip: "Upload one resume per target role for best results (e.g. SWE vs ML).",
+                       action: { label: "Go to Resumes →", onClick: () => setActiveTab("resumes") },
+                     },
+                     {
+                       done: savedSearchLinks.length > 0,
+                       step: "02",
+                       title: "Add Search URLs",
+                       desc: "Paste filtered LinkedIn, Wellfound, or Indeed search URLs. Scout will scrape these on every run.",
+                       tip: 'Use pre-filtered URLs with location/experience — e.g. linkedin.com/jobs/search/?keywords=AI+Engineer',
+                       action: { label: "Manage URLs →", onClick: () => setActiveTab("savedlinks") },
+                     },
+                     {
+                       done: authStatus?.authenticated,
+                       step: "03",
+                       title: "Authenticate LinkedIn / Wellfound",
+                       desc: "Save your browser session cookie to access personalized job feeds and bypass guest rate limits.",
+                       tip: "Open Preferences and paste your li_at cookie. One-time setup.",
+                       action: { label: "Open Preferences →", onClick: handleOpenSettings },
+                     },
+                     {
+                       done: !!rawSettings?.notification_email,
+                       step: "04",
+                       title: "Set Notification Email",
+                       desc: "Get a formatted HTML digest daily with your top matches and ready-to-send outreach messages.",
+                       tip: "Configure Gmail SMTP or Resend in your .env file to enable email delivery.",
+                       action: { label: "Open Preferences →", onClick: handleOpenSettings },
+                     },
+                   ].map((item) => (
+                     <div
+                       key={item.step}
+                       className={`flex gap-5 p-5 rounded-2xl border transition-colors ${
+                         item.done
+                           ? "bg-emerald-500/5 border-emerald-500/20"
+                           : "bg-slate-900/50 border-slate-700/60 hover:border-slate-600"
+                       }`}
+                     >
+                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0 ${
+                         item.done ? "bg-emerald-500 text-black" : "bg-slate-800 text-slate-400"
+                       }`}>
+                         {item.done ? <CheckCircle size={18} /> : item.step}
                        </div>
-                     </div>
-                     {authStatus?.authenticated && (
-                       <span className="text-xs text-slate-400">
-                         {authStatus?.has_linkedin && 'LinkedIn ✓'}{authStatus?.has_linkedin && authStatus?.has_wellfound && ', '}{authStatus?.has_wellfound && 'Wellfound ✓'}
-                       </span>
-                     )}
-                   </div>
-
-                   {/* Last Run Status */}
-                   {runs.length > 0 && (
-                     <div className="flex items-center justify-between p-4 bg-slate-900 rounded-lg border border-slate-700">
-                       <div className="flex items-center gap-3">
-                         <div className={`w-3 h-3 rounded-full ${(runs[0]?.status === 'running' && runs[0]?.completed_at) || runs[0]?.status === 'cancelled' ? 'bg-emerald-500' : runs[0]?.status === 'running' ? 'bg-blue-500' : 'bg-slate-600'}`} />
-                         <div>
-                           <p className="text-white font-semibold text-sm">Last Pipeline Run</p>
-                           <p className="text-slate-400 text-xs">{runs[0]?.status === 'running' && runs[0]?.completed_at ? 'Completed' : runs[0]?.status.charAt(0).toUpperCase() + runs[0]?.status.slice(1)} - {new Date(runs[0]?.started_at).toLocaleDateString()}</p>
+                       <div className="flex-1 min-w-0">
+                         <div className="flex items-start justify-between gap-4 flex-wrap">
+                           <div>
+                             <p className={`font-bold text-sm mb-1 ${item.done ? "text-emerald-300" : "text-white"}`}>
+                               {item.title} {item.done && <span className="text-emerald-500 font-black">✓</span>}
+                             </p>
+                             <p className="text-slate-400 text-xs leading-relaxed mb-1">{item.desc}</p>
+                             <p className="text-slate-600 text-[11px]">💡 {item.tip}</p>
+                           </div>
+                           {!item.done && (
+                             <button
+                               onClick={item.action.onClick}
+                               className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors whitespace-nowrap flex-shrink-0 mt-0.5"
+                             >
+                               {item.action.label}
+                             </button>
+                           )}
                          </div>
                        </div>
                      </div>
-                   )}
+                   ))}
+                 </div>
+               </div>
+
+               {/* Cumulative Stats */}
+               <div>
+                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 px-1">All-time Pipeline Stats</h3>
+                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                   <div className="glass p-5 rounded-2xl border border-slate-800">
+                     <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Discovered</p>
+                     <p className="text-2xl font-bold text-white">{runs.reduce((sum: number, r: any) => sum + (r.jobs_found || 0), 0)}</p>
+                     <p className="text-emerald-400 text-[10px] mt-1">Across {runs.length} run{runs.length !== 1 ? "s" : ""}</p>
+                   </div>
+                   <div className="glass p-5 rounded-2xl border border-slate-800">
+                     <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Matched</p>
+                     <p className="text-2xl font-bold text-white">{runs.reduce((sum: number, r: any) => sum + (r.jobs_matched || 0), 0)}</p>
+                     <p className="text-blue-400 text-[10px] mt-1">Resume-matched</p>
+                   </div>
+                   <div className="glass p-5 rounded-2xl border border-slate-800">
+                     <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Ranked</p>
+                     <p className="text-2xl font-bold text-white">{runs.reduce((sum: number, r: any) => sum + (r.jobs_ranked || 0), 0)}</p>
+                     <p className="text-purple-400 text-[10px] mt-1">Scored &amp; ranked</p>
+                   </div>
+                   <div className="glass p-5 rounded-2xl border border-slate-800">
+                     <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Emails Sent</p>
+                     <p className="text-2xl font-bold text-white">{runs.filter((r: any) => r.emails_sent).length}</p>
+                     <p className="text-amber-400 text-[10px] mt-1">Notification digests</p>
+                   </div>
+                 </div>
+               </div>
+
+               {/* System Status */}
+               <div className="glass p-7 rounded-3xl border border-slate-800">
+                 <h3 className="text-white font-bold mb-5">System Status</h3>
+                 <div className="space-y-3">
+                   {[
+                     { label: "Browser Authentication", sub: authStatus?.authenticated ? `LinkedIn ${authStatus?.has_linkedin ? "✓" : "✗"}  Wellfound ${authStatus?.has_wellfound ? "✓" : "✗"}` : "Not authenticated", ok: authStatus?.authenticated },
+                     { label: "Resume", sub: uploadedResumes.length > 0 ? `${uploadedResumes.length} resume${uploadedResumes.length > 1 ? "s" : ""} uploaded` : "No resumes uploaded", ok: uploadedResumes.length > 0 },
+                     { label: "Search URLs", sub: savedSearchLinks.length > 0 ? `${savedSearchLinks.length} URL${savedSearchLinks.length > 1 ? "s" : ""} saved` : "No URLs configured", ok: savedSearchLinks.length > 0 },
+                     ...(runs.length > 0 ? [{ label: "Last Pipeline Run", sub: `${runs[0]?.status?.charAt(0).toUpperCase() + runs[0]?.status?.slice(1)} — ${new Date(runs[0]?.started_at).toLocaleDateString()}`, ok: runs[0]?.status === "done" }] : []),
+                   ].map((row) => (
+                     <div key={row.label} className="flex items-center justify-between p-4 bg-slate-900 rounded-xl border border-slate-800">
+                       <div className="flex items-center gap-3">
+                         <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${row.ok ? "bg-emerald-500" : "bg-amber-500"}`} />
+                         <div>
+                           <p className="text-white font-semibold text-sm">{row.label}</p>
+                           <p className="text-slate-500 text-xs">{row.sub}</p>
+                         </div>
+                       </div>
+                     </div>
+                   ))}
                  </div>
                </div>
 
                {/* Quick Actions */}
-               <div className="glass p-8 rounded-3xl border border-slate-800 space-y-4">
-                 <h3 className="text-lg font-bold text-white mb-4">Quick Actions</h3>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   <button
-                     onClick={() => setActiveTab("savedlinks")}
-                     className="p-4 bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 border border-slate-700 rounded-lg flex items-center gap-3 transition-all group"
-                   >
-                     <Globe size={20} className="text-orange-500 group-hover:scale-110 transition-transform" />
-                     <div className="text-left">
-                       <p className="text-white font-semibold text-sm">Manage Search URLs</p>
-                       <p className="text-slate-400 text-xs">Add or remove links</p>
-                     </div>
+               <div className="glass p-7 rounded-3xl border border-slate-800">
+                 <h3 className="text-white font-bold mb-5">Quick Actions</h3>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                   <button onClick={() => setActiveTab("savedlinks")} className="p-4 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-xl flex items-center gap-3 transition-all text-left">
+                     <Globe size={20} className="text-orange-400 flex-shrink-0" />
+                     <div><p className="text-white font-semibold text-sm">Manage Search URLs</p><p className="text-slate-500 text-xs">{savedSearchLinks.length} saved</p></div>
                    </button>
-
-                   <button
-                     onClick={() => setActiveTab("resumes")}
-                     className="p-4 bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 border border-slate-700 rounded-lg flex items-center gap-3 transition-all group"
-                   >
-                     <FileText size={20} className="text-blue-500 group-hover:scale-110 transition-transform" />
-                     <div className="text-left">
-                       <p className="text-white font-semibold text-sm">Upload Resume</p>
-                       <p className="text-slate-400 text-xs">{uploadedResumes.length} uploaded</p>
-                     </div>
+                   <button onClick={() => setActiveTab("resumes")} className="p-4 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-xl flex items-center gap-3 transition-all text-left">
+                     <FileText size={20} className="text-blue-400 flex-shrink-0" />
+                     <div><p className="text-white font-semibold text-sm">Upload Resume</p><p className="text-slate-500 text-xs">{uploadedResumes.length} uploaded</p></div>
                    </button>
-
                    <button
                      onClick={async () => {
-                       if (uploadedResumes.length === 0) {
-                         alert("Please upload at least one resume before starting a pipeline.");
-                         setActiveTab("resumes");
-                         return;
-                       }
+                       if (uploadedResumes.length === 0) { alert("Please upload at least one resume first."); setActiveTab("resumes"); return; }
                        const token = (session as any)?.user?.accessToken || "";
                        try {
                          setTriggering(true);
                          const res = await triggerPipeline({}, token);
                          if (res?.run_id) setActiveRunId(res.run_id);
                          await loadData(true);
-                         alert("Pipeline triggered! Check status in Pipeline History.");
-                       } catch (error) {
-                         alert("Failed to trigger pipeline: " + (error as Error).message);
-                       } finally {
-                         setTriggering(false);
-                       }
+                         alert("Pipeline triggered! Check Pipeline History for status.");
+                       } catch (err) { alert("Failed: " + (err as Error).message); } finally { setTriggering(false); }
                      }}
                      disabled={triggering || activeRunId !== null}
-                     className="p-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg flex items-center gap-3 transition-all group"
+                     className="p-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl flex items-center gap-3 transition-all text-left"
                    >
-                     <RotateCw size={20} className={`text-white ${triggering ? 'animate-spin' : 'group-hover:rotate-180 transition-transform'}`} />
-                     <div className="text-left">
-                       <p className="text-white font-semibold text-sm">Trigger Scan</p>
-                       <p className="text-white/80 text-xs">{activeRunId ? 'Running...' : 'Scan all saved URLs'}</p>
-                     </div>
+                     <RotateCw size={20} className={`text-white flex-shrink-0 ${triggering ? "animate-spin" : ""}`} />
+                     <div><p className="text-white font-semibold text-sm">Trigger Full Scan</p><p className="text-white/60 text-xs">{activeRunId ? "Already running..." : "Run pipeline on all saved URLs"}</p></div>
                    </button>
-
-                   <button
-                     onClick={() => setIsSettingsOpen(true)}
-                     className="p-4 bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 border border-slate-700 rounded-lg flex items-center gap-3 transition-all group"
-                   >
-                     <Settings size={20} className="text-slate-400 group-hover:scale-110 transition-transform" />
-                     <div className="text-left">
-                       <p className="text-white font-semibold text-sm">Preferences</p>
-                       <p className="text-slate-400 text-xs">Configure settings</p>
-                     </div>
+                   <button onClick={handleOpenSettings} className="p-4 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-xl flex items-center gap-3 transition-all text-left">
+                     <Settings size={20} className="text-slate-400 flex-shrink-0" />
+                     <div><p className="text-white font-semibold text-sm">Preferences</p><p className="text-slate-500 text-xs">Location, email, search queries</p></div>
                    </button>
                  </div>
                </div>
              </div>
+
            ) : activeTab === "history" ? (
              <PipelineHistory 
                runs={runs} 
@@ -1115,13 +1083,63 @@ export default function Dashboard() {
 
 
 
-                   <div className="space-y-2">
+                   <div className="grid grid-cols-2 gap-6 mt-6">
+                      <div className="space-y-2 flex flex-col justify-start">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Max Jobs to Process per Run</label>
+                        <p className="text-[10px] text-slate-600 mb-1 leading-tight">Lower this number (e.g. 10 or 20) if you are running into AI quota limits. (Max 100)</p>
+                        <input 
+                          type="number" 
+                          min="1"
+                          max="100"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-sm text-white focus:border-emerald-500 transition-colors"
+                          value={rawSettings?.max_jobs_per_run || 20}
+                          onChange={(e) => setRawSettings({...rawSettings, max_jobs_per_run: parseInt(e.target.value) || 20})}
+                        />
+                      </div>
+                      <div className="space-y-2 flex flex-col justify-start">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Enable AI Outreach Generation</label>
+                        <p className="text-[10px] text-slate-600 mb-2 leading-tight">Write personalized cold emails and LinkedIn messages. Turn off to save your daily AI budget.</p>
+                        <div className="flex items-center gap-3 mt-1">
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              className="sr-only peer" 
+                              checked={rawSettings?.enable_outreach ?? true}
+                              onChange={(e) => setRawSettings({...rawSettings, enable_outreach: e.target.checked})}
+                            />
+                            <div className="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-emerald-500 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                          </label>
+                          <span className="text-sm font-medium text-slate-300">
+                            {rawSettings?.enable_outreach !== false ? "Enabled" : "Disabled"}
+                          </span>
+                        </div>
+                      </div>
+                   </div>
+
+                   <div className="space-y-2 mt-6">
                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Resume Summary (for LLM matching)</label>
                       <textarea 
                         rows={4}
                         className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-sm text-white focus:border-emerald-500 transition-colors resize-none"
                         value={rawSettings?.resume_summary || ""}
                         onChange={(e) => setRawSettings({...rawSettings, resume_summary: e.target.value})}
+                      />
+                   </div>
+
+                   <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mt-6">
+                      <label className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2 mb-2">
+                         Personalized LinkedIn Session (li_at cookie)
+                         {authStatus?.authenticated && <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-md text-[10px]">Session Active</span>}
+                      </label>
+                      <p className="text-[10px] text-blue-300 mb-3 block">
+                         To scrape LinkedIn safely, log into LinkedIn on your browser, right-click &rarr; Inspect &rarr; Application &rarr; Cookies. Copy the value of the <strong className="text-white">li_at</strong> cookie and paste it below.
+                      </p>
+                      <input 
+                        type="password" 
+                        className="w-full bg-slate-900/50 border border-slate-800 rounded-xl p-3 text-sm text-blue-100 focus:border-blue-500 focus:outline-none transition-colors"
+                        placeholder={authStatus?.authenticated ? "•••••••••••••••• (Leave blank to keep current)" : "AQEDAS..."}
+                        value={liAtCookie}
+                        onChange={(e) => setLiAtCookie(e.target.value)}
                       />
                    </div>
 

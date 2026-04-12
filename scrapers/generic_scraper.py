@@ -1,9 +1,4 @@
-"""
-Generic LLM-based listing scraper for unknown job portals.
-
-When we don't have platform-specific CSS selectors, we use Mistral
-to split the page text into individual job postings.
-"""
+"""generic_scraper.py"""
 
 import json
 import logging

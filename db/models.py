@@ -30,7 +30,7 @@ class UserSettings(Base):
  
     interval_hours: Mapped[int] = mapped_column(Integer, default=3)
  
-    search_queries: Mapped[list] = mapped_column(JSON, default=list) # JSON, so that i can change it later if needed
+    search_queries: Mapped[list] = mapped_column(JSON, default=list) 
     job_experience : Mapped[str] = mapped_column(String, default="0")
     location: Mapped[str] = mapped_column(String, default="India")
  
@@ -40,6 +40,9 @@ class UserSettings(Base):
     
     browser_session: Mapped[dict | None] = mapped_column(JSON, nullable=True)
  
+    max_jobs_per_run: Mapped[int] = mapped_column(Integer, default=20)
+    enable_outreach: Mapped[bool] = mapped_column(Boolean, default=True)
+
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
  
     user: Mapped["User"] = relationship(back_populates="settings")
@@ -51,7 +54,7 @@ class Link(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=new_uuid)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False, index=True)
     url: Mapped[str] = mapped_column(Text, nullable=False)
-    platform: Mapped[str] = mapped_column(String, default="generic")  # linkedin, indeed, reddit, generic
+    platform: Mapped[str] = mapped_column(String, default="generic")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
  
@@ -63,9 +66,9 @@ class UserResume(Base):
  
     id: Mapped[str] = mapped_column(String, primary_key=True, default=new_uuid)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False, index=True)
-    file_name: Mapped[str] = mapped_column(String, nullable=False)  # Original filename as uploaded
-    file_path: Mapped[str] = mapped_column(String, nullable=False)  # Path in storage
-    file_size: Mapped[int] = mapped_column(Integer, default=0)  # File size in bytes
+    file_name: Mapped[str] = mapped_column(String, nullable=False)
+    file_path: Mapped[str] = mapped_column(String, nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
  
@@ -78,23 +81,19 @@ class PipelineRun(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=new_uuid)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False, index=True)
     celery_task_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    triggered_by: Mapped[str] = mapped_column(String, default="scheduler")  # "scheduler" | "manual"
-    status: Mapped[str] = mapped_column(String, default="pending")  # pending|running|done|failed|cancelled
-    execution_count: Mapped[int] = mapped_column(Integer, default=1)  # Track how many times this pipeline run has executed
+    triggered_by: Mapped[str] = mapped_column(String, default="scheduler")
+    status: Mapped[str] = mapped_column(String, default="pending")
+    execution_count: Mapped[int] = mapped_column(Integer, default=1)
     jobs_found: Mapped[int] = mapped_column(Integer, default=0)
     jobs_matched: Mapped[int] = mapped_column(Integer, default=0)
     jobs_ranked: Mapped[int] = mapped_column(Integer, default=0)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    
-    # Per-pipeline scheduling
-    is_scheduled: Mapped[bool] = mapped_column(Boolean, default=False)  # Whether this run should be rescheduled
-    interval_hours: Mapped[int] = mapped_column(Integer, default=3)  # Scheduling interval for this specific run
-    
-    # Notification tracking
-    emails_sent: Mapped[bool] = mapped_column(Boolean, default=False)  # Whether notification email was successfully sent
- 
+    is_scheduled: Mapped[bool] = mapped_column(Boolean, default=False)
+    interval_hours: Mapped[int] = mapped_column(Integer, default=3)
+    emails_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+
     user: Mapped["User"] = relationship(back_populates="pipeline_runs")
     job_results: Mapped[list["JobResult"]] = relationship(back_populates="run", cascade="all, delete-orphan")
  

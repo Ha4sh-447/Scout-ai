@@ -1,12 +1,4 @@
-"""
-Central page loader — routes URLs to the right scraper and handles
-batched extraction with anti-detection delays.
-
-Extraction strategy:
-- First page only (no pagination)
-- Max 30 jobs per URL
-- Processed in batches of 10 with random 3-8s delays between batches
-"""
+"""page_loader.py"""
 
 import asyncio
 import logging
@@ -92,60 +84,37 @@ async def load_job_pages(
     platforms: List[str] | None = None,
     location: str | None = None
 ) -> tuple[List[RawJobData], List[str]]:
-    """
-    Scrape multiple URLs with hybrid routing and batched extraction.
-
-    Flow per URL:
-    1. Route to appropriate scraper (Reddit JSON / CSS listing / LLM generic / Playwright)
-    2. All cards from first page are collected
-    3. Capped at MAX_JOBS_PER_URL (30)
-    4. Yielded in batches of BATCH_SIZE (10) with random delays between batches
-    5. Random delay before moving to the next URL
-    """
+    """Scrape multiple URLs with hybrid routing."""
     all_results: list[RawJobData] = []
     all_errors: list[str] = []
 
     if config is None:
         config = ScraperConfig()
 
-    # If no URLs provided but search queries exist, generate platform-specific search URLs
     if not urls and search_queries:
         platforms = platforms or ["linkedin"]
-        logger.info(f"[page_loader] Generating search URLs for {len(search_queries)} queries on {platforms} in {location or 'default location'}")
-        
         generated_urls = []
-        loc_suffix = ""
-        if location:
-            from urllib.parse import quote_plus
-            loc_q = quote_plus(location)
-            
         for q in search_queries:
             from urllib.parse import quote_plus
             encoded_q = quote_plus(q)
-            
             if "linkedin" in platforms:
                 url = f"https://www.linkedin.com/jobs/search/?keywords={encoded_q}"
                 if location: url += f"&location={quote_plus(location)}"
                 generated_urls.append(url)
-                
             if "indeed" in platforms:
-                # Indeed India default if no location
                 url = f"https://in.indeed.com/jobs?q={encoded_q}"
                 if location: url += f"&l={quote_plus(location)}"
                 generated_urls.append(url)
-                
             if "glassdoor" in platforms:
                 url = f"https://www.glassdoor.co.in/Job/jobs.htm?sc.keyword={encoded_q}"
                 if location: url += f"&location={quote_plus(location)}"
                 generated_urls.append(url)
-
             if "wellfound" in platforms:
                 def slugify(text: str) -> str:
                     return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
                 role_slug = slugify(q)
                 loc_slug = slugify(location or "india")
                 generated_urls.append(f"https://wellfound.com/role/l/{role_slug}/{loc_slug}")
-        
         urls = generated_urls
 
     for i, url in enumerate(urls):
@@ -208,7 +177,6 @@ async def load_job_pages(
             all_errors.append(f"Scraper failed for {url}: {e}")
             logger.error(f"[page_loader] Error scraping {url}: {e}")
 
-        # Random delay between URLs (skip after last URL)
         if i < len(urls) - 1:
             delay = random.uniform(*config.url_delay_range)
             logger.info(f"[page_loader] Waiting {delay:.1f}s before next URL")
