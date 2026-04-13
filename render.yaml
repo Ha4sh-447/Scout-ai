@@ -12,12 +12,12 @@ services:
           property: connectionString
       - key: REDIS_URL
         fromService:
-          type: redis
+          type: keyvalue
           name: job-finder-redis
           property: connectionString
       - key: CELERY_BROKER_URL
         fromService:
-          type: redis
+          type: keyvalue
           name: job-finder-redis
           property: connectionString
       - key: DEVELOPMENT_MODE
@@ -36,20 +36,21 @@ services:
           property: connectionString
       - key: REDIS_URL
         fromService:
-          type: redis
+          type: keyvalue
           name: job-finder-redis
           property: connectionString
       - key: CELERY_BROKER_URL
         fromService:
-          type: redis
+          type: keyvalue
           name: job-finder-redis
           property: connectionString
+
+  # Redis
+  - type: keyvalue
+    name: job-finder-redis
+    plan: starter
 
 databases:
   - name: job-finder-db
     plan: starter
     databaseName: job_agent
-
-redis:
-  - name: job-finder-redis
-    plan: starter
