@@ -21,35 +21,21 @@ An intelligent job discovery platform powered by AI agents that finds, matches, 
 
 ### Prerequisites
 - **Python** 3.9+, **Docker**, **Git**
-- **Google Account** (for email SMTP)
+- **Google Account** (for email SMTP & optional OAuth)
 - **LinkedIn Account** (for job scraping)
-- **Mistral AI Account** (for embeddings)
+- **Groq & Mistral AI Accounts** (for LLMs and embeddings)
+- **Node.js 18+** (for frontend development)
 
-### Setup (Choose Your Platform)
+### Setup (All Platforms)
 
-**Linux/macOS/WSL/BSD:**
 ```bash
 git clone <repo>
 cd agentic_job_finder
-bash setup.sh
+python setup.py
 ```
 
-**Windows Command Prompt:**
-```cmd
-git clone <repo>
-cd agentic_job_finder
-setup.bat
-```
-
-**Windows PowerShell:**
-```powershell
-git clone <repo>
-cd agentic_job_finder
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-.\setup.ps1
-```
-
-> **👉 See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed platform-specific instructions.**
+> Works on Linux, macOS, and Windows — no bash or PowerShell required.
+> **👉 See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed setup instructions.**
 
 ---
 
@@ -62,12 +48,15 @@ nano .env  # Edit with your credentials
 ```
 
 **Required:**
-- `MISTRAL_API_KEY` - Get from [mistral.ai](https://mistral.ai)
-- `JWT_SECRET_KEY` - Any random string
+- `MISTRAL_API_KEY` - Get from [mistral.ai](https://mistral.ai) (Embeddings & Backup LLM)
+- `GROQ_API_KEY` - Get from [groq.com](https://groq.com) (Primary fast LLMs)
+- `JWT_SECRET_KEY` - Any random string (Backend auth)
+- `AUTH_SECRET` - Random string for NextAuth (`openssl rand -base64 32`)
 - `EMAIL_SENDER` - Your Gmail address
-- `EMAIL_PASSWORD` - [Gmail app password](https://myaccount.google.com/apppasswords) (16 digits)
+- `EMAIL_PASSWORD` - [Gmail app password](https://myaccount.google.com/apppasswords)
+- `DATABASE_URL` - PostgreSQL connection string
 
-See [Configuration Reference](#-configuration-reference) for complete `.env` options.
+See [Configuration Reference](#-configuration-reference) for the complete list of system environment variables.
 
 ### 2. Start Services
 ```bash
@@ -222,18 +211,29 @@ from URLs     + semantic search   relevance    outreach   digest
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `MISTRAL_API_KEY` | Embeddings API | Get from mistral.ai |
-| `JWT_SECRET_KEY` | JWT secret | Any random string |
-| `EMAIL_SENDER` | Gmail address | your-email@gmail.com |
-| `EMAIL_PASSWORD` | Gmail app password | 16-digit app password |
-| `REDIS_URL` | Redis connection | redis://redis:6379/0 |
+| `MISTRAL_API_KEY` | Embeddings & LLM | Get from mistral.ai |
+| `GROQ_API_KEY` | Fast LLM Provider | Get from groq.com |
+| `JWT_SECRET_KEY` | Backend Signatures | Any random string |
+| `AUTH_SECRET` | NextAuth Encryption | `openssl rand -base64 32` |
+| `EMAIL_SENDER` | SMTP Sender | your-email@gmail.com |
+| `EMAIL_PASSWORD` | SMTP Password | 16-digit app password |
+| `REDIS_URL` | Task Queue Broker | redis://redis:6379/0 |
 | `QDRANT_URL` | Vector DB connection | http://qdrant:6333 |
-| `DATABASE_URL` | PostgreSQL connection | postgresql+asyncpg://... |
+| `DATABASE_URL` | Postgres Connection | postgresql+asyncpg://... |
 
-**Other** (optional):
-- `LANGCHAIN_API_KEY` - For LangChain tracing
-- `LANGCHAIN_TRACING_V2` - Enable tracing (true/false)
-- `DEVELOPMENT_MODE` - Enable dev features (true/false)
+**Advanced Configuration (Optional):**
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `LLM_USER_DAILY_LIMIT` | Max AI calls per user/day | `30` |
+| `EMAIL_SMTP_HOST` | SMTP Server Host | `smtp.gmail.com` |
+| `EMAIL_SMTP_PORT` | SMTP Server Port | `587` |
+| `FRONTEND_URL` | CORS allow-origin | `http://localhost:3000` |
+| `GOOGLE_CLIENT_ID` | Google OAuth ID | (Optional) |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth Secret | (Optional) |
+| `LANGCHAIN_API_KEY` | LLM Observability | (Optional) |
+| `LANGCHAIN_TRACING_V2` | Enable LC Tracing | `false` |
+| `DEVELOPMENT_MODE` | Detailed Debug Logs | `true` |
 
 ### Frontend Environment Variables (`.env` in `/frontend`)
 
@@ -267,12 +267,17 @@ from URLs     + semantic search   relevance    outreach   digest
 
 ## ✨ Features
 
-- ✅ AI-powered job discovery from multiple sources
-- ✅ Semantic resume matching with vector embeddings
-- ✅ Multi-factor relevance scoring
-- ✅ Personalized AI-generated outreach messages
-- ✅ Automated email digests
-- ✅ Scheduled recurring pipeline runs
-- ✅ Production-ready Docker architecture
+- ✅ **Smart LLM Routing**: Distributed load-balancing across Groq and Mistral providers.
+- ✅ **Circuit Breaker**: Auto-healing rate-limit protection for all AI operations.
+- ✅ **Per-User AI Quotas**: Enforced daily limits to manage capacity and costs.
+- ✅ **Response Caching**: Efficient AI usage via SHA256-keyed caching.
+- ✅ **AI-powered job discovery** from multiple sources (LinkedIn, Indeed, etc.).
+- ✅ **Semantic resume matching** with vector embeddings.
+- ✅ **Multi-factor relevance scoring** (Match, Recency, Quality).
+- ✅ **Personalized AI outreach** message generation.
+- ✅ **Automated email digests** & recurring scheduled runs.
+- ✅ **Automatic job cleanup**: Daily deletion of results >7 days old.
+- ✅ **Unified setup system**: Single `python setup.py` for all OS platforms.
+- ✅ **Production-ready** Docker-orchestrated architecture.
 
 ---

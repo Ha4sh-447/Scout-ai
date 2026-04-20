@@ -3,22 +3,23 @@
 ## Quick Start
 
 ### 1. Automated Setup (Recommended)
-Run the comprehensive setup script:
+Run the universal setup script (works on Linux, macOS, and Windows):
 
 ```bash
-./setup.sh
+python setup.py
 ```
 
 This script will:
-- ✓ Check prerequisites (Python, pip, Docker)
+- ✓ Check prerequisites (Python, pip, Docker, Node/npm)
+- ✓ Create `.env` from `.env.example` if missing
 - ✓ Setup Python virtual environment
 - ✓ Install Python dependencies
 - ✓ Install Playwright browsers
 - ✓ Create required data directories
 - ✓ Setup frontend dependencies
-- ✓ Run database migrations
-- ✓ Run preflight checks
 - ✓ Start Docker containers (optional)
+- ✓ Run database migrations (optional)
+- ✓ Run preflight checks
 
 ### 2. Manual Setup
 
@@ -249,18 +250,10 @@ cd ../..
 pytest local_tests/
 ```
 
-### Clean Up
-```bash
-# Clear Docker volumes (destructive)
-docker-compose down -v
+## Notes
 
-# Clean Python cache
-find . -type d -name __pycache__ -exec rm -rf {} +
-find . -type f -name "*.pyc" -delete
-
-# Reset database
-scripts/db_cleanup.py
-```
+### Automatic Job Cleanup
+Scraped job results older than **7 days** are automatically deleted from the `job_results` table on every application startup and once every 24 hours thereafter. This keeps the database lean. Jobs that were already emailed/delivered to users remain in their inbox.
 
 ### Scheduler Tests
 ```bash

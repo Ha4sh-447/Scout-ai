@@ -1,79 +1,79 @@
-# Platform-Independent Setup Guide
+# Setup Guide — Agentic Job Finder
 
-**Supported**: Linux, macOS, Windows (Git Bash/WSL/PowerShell), BSD
+**Supported**: Linux, macOS, Windows (any terminal with Python 3.9+)
 
 ---
 
 ## 🚀 Quick Start
 
-### Linux / macOS / BSD
 ```bash
-bash setup.sh
+git clone <repo-url>
+cd agentic_job_finder
+python setup.py        # python3 on Linux/macOS if needed
 ```
 
-### Windows - Git Bash (Recommended)
-1. Install [Git for Windows](https://git-scm.com/download/win)
-2. Open Git Bash
-3. `bash setup.sh`
-
-### Windows - WSL
-```bash
-wsl --install  # Then restart and run: bash setup.sh
-```
-
-### Windows - PowerShell
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-.\setup.ps1
-```
-
-### Windows - Command Prompt
-```cmd
-setup.bat
-```
+The script walks you through every step interactively — no bash or PowerShell required.
 
 ---
 
-## 📋 Setup Scripts
+## 🔎 Check Prerequisites Only
 
-| Script | Platform | Requirements |
-|--------|----------|--------------|
-| `setup.sh` | Linux, macOS, WSL, Git Bash | bash, python3, pip |
-| `setup.bat` | Windows cmd | Git Bash or fallback instructions |
-| `setup.ps1` | PowerShell 7+ | PowerShell (no bash needed) |
+```bash
+python setup.py --check-only
+```
 
-**What they do:**
-- Create and activate Python virtual environment
-- Install dependencies from `requirements.txt`
-- Setup Playwright (web scraping)
-- Create required directories
-- Initialize frontend dependencies
+Prints a dependency table (Python, pip, Docker, Node/npm, Git) and exits — nothing is installed.
 
 ---
 
-## 🔧 Manual Setup (If Scripts Fail)
+## 📋 What `setup.py` Does
 
-### Linux/macOS/WSL
+| Step | Action |
+|------|--------|
+| 1 | Check prerequisites (Python, pip, Docker, Node/npm, git) |
+| 2 | Create `.env` from `.env.example` if missing |
+| 3 | Create Python virtual environment (`.venv`) |
+| 4 | Install Python dependencies from `requirements.txt` |
+| 5 | Install Playwright Chromium browser *(optional — asked)* |
+| 6 | Create `data/resumes/` directory |
+| 7 | Install frontend npm dependencies *(optional — asked)* |
+| 8 | Start Docker services (`docker compose up -d`) *(optional — asked)* |
+| 9 | Run Alembic database migrations *(optional — asked)* |
+| 10 | Run preflight checks (`scripts/preflight.py`) |
+
+---
+
+## 🔧 Manual Setup (If Script Fails)
+
 ```bash
+# 1. Clone and enter the project
 git clone <repo-url> && cd agentic_job_finder
-python3 -m venv .venv && source .venv/bin/activate
+
+# 2. Copy environment file and fill in your keys
+cp .env.example .env
+
+# 3. Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+
+# 4. Install dependencies
 pip install -r requirements.txt
 playwright install chromium
+
+# 5. Create data directories
 mkdir -p data/resumes
-cd frontend && npm install && cd ..
-docker-compose up -d
-```
 
-### Windows (cmd.exe)
-```cmd
-git clone <repo-url> && cd agentic_job_finder
-python -m venv .venv
-.venv\Scripts\activate.bat
-pip install -r requirements.txt
-playwright install chromium
-mkdir data\resumes
+# 6. Install frontend dependencies
 cd frontend && npm install && cd ..
-docker-compose up -d
+
+# 7. Start Docker services
+docker compose up -d
+
+# 8. Run migrations
+cd db/migrations && alembic upgrade head && cd ../..
+
+# 9. Run preflight checks
+python scripts/preflight.py
 ```
 
 ---
@@ -82,23 +82,21 @@ docker-compose up -d
 
 | Issue | Solution |
 |-------|----------|
-| bash not found on Windows | Install [Git for Windows](https://git-scm.com/download/win) or use WSL |
-| Permission denied on macOS | `chmod +x setup.sh setup.bat setup.ps1` |
-| PowerShell execution error | Run: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` |
-| Virtual env not activating | Verify `.venv/bin/activate` exists; recreate: `rm -rf .venv && python3 -m venv .venv` |
+| `python: command not found` | Use `python3` on Linux/macOS, or install Python from [python.org](https://www.python.org/downloads/) |
+| Permission denied (macOS/Linux) | `chmod +x setup.py` |
 | Docker not found | Install [Docker Desktop](https://www.docker.com/products/docker-desktop) |
-| Playwright issues | `playwright install chromium` |
+| Playwright issues | Run: `playwright install chromium` inside the venv |
+| venv not activating | Recreate: `rm -rf .venv && python3 -m venv .venv` |
+| Migrations fail | Ensure Docker services are up: `docker compose ps` |
 
 ---
 
 ## ✅ After Setup
 
-Verify installation:
 ```bash
-docker-compose ps              # Check all services running
-source .venv/bin/activate      # Activate Python env
-python -c "import fastapi"     # Verify dependencies
+docker compose ps                        # All services should be "running"
+source .venv/bin/activate                # Activate venv (Linux/macOS)
+python -c "import fastapi; print('OK')" # Verify dependencies
 ```
 
 Then follow [README.md](README.md) to run the application.
-

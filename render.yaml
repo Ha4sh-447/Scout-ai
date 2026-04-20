@@ -3,7 +3,7 @@ services:
     name: job-finder-api
     env: docker
     dockerfilePath: Dockerfile.api
-    plan: starter
+    plan: free
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -28,7 +28,7 @@ services:
     name: job-finder-worker
     env: docker
     dockerfilePath: Dockerfile.celery
-    plan: starter
+    plan: free
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -48,9 +48,10 @@ services:
   # Redis
   - type: keyvalue
     name: job-finder-redis
-    plan: starter
+    plan: free
+    ipAllowList: []
 
 databases:
   - name: job-finder-db
-    plan: starter
+    plan: free
     databaseName: job_agent

@@ -1,9 +1,9 @@
 import logging
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, delete
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from workers.tasks import run_pipeline_task
-from db.models import PipelineRun
+from db.models import JobResult, PipelineRun
 from db.base import AsyncSessionLocal
 from datetime import datetime, timedelta
 
@@ -180,6 +180,29 @@ async def _check_and_reschedule_pipelines():
                     logger.error(f"[Scheduler] Failed to reschedule pipeline {run.id}: {e}", exc_info=True)
                     continue
 
+async def _cleanup_old_job_results():
+    """
+    Delete JobResult rows that are older than 7 days (based on created_at).
+    PipelineRun rows are intentionally kept — they are the user's run history.
+    This only prunes stale scraped job details to keep the DB lean.
+    Runs once on startup and every 24 hours thereafter via APScheduler.
+    """
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                delete(JobResult).where(JobResult.created_at < cutoff)
+            )
+            await db.commit()
+            deleted = result.rowcount
+            if deleted:
+                logger.info(f"[Cleanup] 🗑️  Deleted {deleted} job result(s) older than 7 days")
+            else:
+                logger.info("[Cleanup] ✅ No stale job results to delete")
+    except Exception as e:
+        logger.error(f"[Cleanup] ❌ Failed to clean up old job results: {e}", exc_info=True)
+
+
 def _job_id(user_id:str):
     return f"pipeline_{user_id}"
 
@@ -219,11 +242,22 @@ async def start_scheduler():
             replace_existing=True,
     )
 
+    # Clean up job results older than 7 days — runs every 24 hours
+    scheduler.add_job(
+            _cleanup_old_job_results,
+            trigger=IntervalTrigger(hours=24),
+            id="cleanup_old_job_results",
+            replace_existing=True,
+    )
+
     scheduler.start()
     logger.info(f"[scheduler] Started")
 
     # Run first check immediately
     await _check_and_reschedule_pipelines()
+
+    # Run first cleanup immediately on startup
+    await _cleanup_old_job_results()
 
 
 async def stop_scheduler():
