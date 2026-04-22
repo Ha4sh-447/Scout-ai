@@ -53,7 +53,7 @@ def is_known_listing(url: str) -> bool:
 
 def _normalize_linkedin_url(url: str, query: str = "", freshness: str = "default") -> str:
     """
-    Convert any LinkedIn jobs URL to the public guest search endpoint.
+    Convert any LinkedIn jobs URL to the public guest search endpoint or respect auth collections.
     Includes freshness filters: f_TPR=r604800 (past week), f_TPR=r86400 (past 24h)
     """
     freshness_map = {
@@ -63,8 +63,10 @@ def _normalize_linkedin_url(url: str, query: str = "", freshness: str = "default
     }
     suffix = freshness_map.get(freshness, "")
 
+    if "/jobs/collections/" in url or (url.endswith("/jobs/") and not query):
+        return url
+
     if "/jobs/search/" in url and "keywords=" in url:
-        # If it already has parameters, append the freshness if not present
         if "&f_TPR=" not in url:
             return url + suffix
         return url
@@ -112,38 +114,101 @@ def _normalize_wellfound_url(url: str, query: str = "", location: str = "") -> s
 
 
 
-async def _extract_linkedin_cards(page: Page, max_cards: int = 30) -> list[dict]:
+async def _safe_query_selector_all(page: Page, selector: str, max_retries: int = 2) -> list:
+    """Query elements safely, handling 'Execution context was destroyed' errors."""
+    for i in range(max_retries + 1):
+        try:
+            return await page.query_selector_all(selector)
+        except Exception as e:
+            if "destroyed" in str(e).lower() and i < max_retries:
+                logger.warning(f"[listing_scraper] Navigation interrupted query for '{selector}', retrying ({i+1}/{max_retries})...")
+                await page.wait_for_timeout(1000)
+                continue
+            raise e
+
+
+async def _extract_linkedin_cards(page: Page, max_cards: int = 30) -> tuple[list[dict], bool]:
     """
     Extract job cards from LinkedIn search page.
+    Returns (cards, is_guest_mode).
     Supports both guest/public view (.base-card) and authenticated view
     (scaffold-layout job cards) with automatic detection.
     """
-    # Log the current page state for debugging
     current_url = page.url
     page_title = await page.title()
     logger.info(f"[listing_scraper] LinkedIn page loaded: title='{page_title}', url={current_url}")
 
-    cards = await page.query_selector_all(".base-card")
+    try:
+        await page.wait_for_load_state("load", timeout=5000)
+    except:
+        pass
 
-    if cards:
-        logger.info(f"[listing_scraper] LinkedIn: detected GUEST view ({len(cards)} .base-card elements)")
-        return await _extract_linkedin_guest_cards(cards, max_cards)
+    for attempt in range(2):
+        try:
+            cookies = await page.context.cookies()
+            has_cookies = any("linkedin.com" in c["domain"] for c in cookies)
+            if has_cookies:
+                logger.info(f"[listing_scraper] LinkedIn: Session detected ({len(cookies)} cookies), waiting for AUTH view...")
+                try:
+                    await page.wait_for_selector("li.scaffold-layout__list-item .job-card-container, div.job-card-container", timeout=8000)
+                except:
+                    pass
 
-    auth_cards = await page.query_selector_all(
-        "li.scaffold-layout__list-item .job-card-container, "
-        "li.jobs-search-results__list-item, "
-        "div.job-card-container, "
-        "li.scaffold-layout__list-item"
-    )
+            auth_cards = await _safe_query_selector_all(
+                page,
+                "li.scaffold-layout__list-item .job-card-container, "
+                "li.jobs-search-results__list-item, "
+                "div.job-card-container, "
+                "li.scaffold-layout__list-item"
+            )
 
-    if auth_cards:
-        logger.info(f"[listing_scraper] LinkedIn: detected AUTH view ({len(auth_cards)} job-card elements)")
-        return await _extract_linkedin_auth_cards(auth_cards, max_cards)
+            auth_cards = await _safe_query_selector_all(
+                page,
+                "li.scaffold-layout__list-item .job-card-container, "
+                "li.jobs-search-results__list-item, "
+                "div.job-card-container, "
+                "li.scaffold-layout__list-item"
+            )
 
-    job_links = await page.query_selector_all('a[href*="/jobs/view/"]')
-    if job_links:
-        logger.info(f"[listing_scraper] LinkedIn: fallback - found {len(job_links)} job links on page")
-        return await _extract_linkedin_fallback_links(page, job_links, max_cards)
+            if auth_cards:
+                logger.info(f"[listing_scraper] LinkedIn: detected AUTH view ({len(auth_cards)} job-card elements)")
+                
+                try:
+                    list_el = await page.query_selector(".jobs-search-results-list, [data-test-results-container]")
+                    if list_el:
+                        logger.info("[listing_scraper] LinkedIn: Scrolling to load more jobs...")
+                        for _ in range(3):
+                            await list_el.evaluate("el => el.scrollTop = el.scrollHeight")
+                            await page.wait_for_timeout(1000)
+                        auth_cards = await _safe_query_selector_all(page, "li.scaffold-layout__list-item .job-card-container, li.jobs-search-results__list-item")
+                        logger.info(f"[listing_scraper] LinkedIn: after scroll found {len(auth_cards)} jobs")
+                except Exception as scroll_err:
+                    logger.warning(f"[listing_scraper] Scroll failed: {scroll_err}")
+
+                return await _extract_linkedin_auth_cards(auth_cards, max_cards), False
+
+            cards = await _safe_query_selector_all(page, ".base-card")
+            if cards:
+                logger.info(f"[listing_scraper] LinkedIn: detected GUEST view ({len(cards)} .base-card elements)")
+                return await _extract_linkedin_guest_cards(cards, max_cards), True
+
+            job_links = await _safe_query_selector_all(page, 'a[href*="/jobs/view/"]')
+            if job_links:
+                logger.info(f"[listing_scraper] LinkedIn: fallback - found {len(job_links)} job links on page")
+                return await _extract_linkedin_fallback_links(page, job_links, max_cards), True
+            
+            if attempt == 0:
+                logger.info("[listing_scraper] LinkedIn: 0 cards found, waiting 3s for possible redirect/render...")
+                await page.wait_for_timeout(3000)
+                continue
+
+        except Exception as e:
+            if "destroyed" in str(e).lower() and attempt == 0:
+                logger.warning(f"[listing_scraper] LinkedIn context destroyed during extraction, retrying... {e}")
+                await page.wait_for_timeout(2000)
+                continue
+            logger.error(f"[listing_scraper] LinkedIn extraction error: {e}")
+            break
 
     logger.warning(f"[listing_scraper] LinkedIn: 0 cards found with ALL selectors!")
     logger.warning(f"[listing_scraper] Page title: '{page_title}'")
@@ -159,7 +224,7 @@ async def _extract_linkedin_cards(page: Page, max_cards: int = 30) -> list[dict]
     except Exception:
         pass
 
-    return []
+    return [], True
 
 
 async def _extract_linkedin_guest_cards(cards, max_cards: int) -> list[dict]:
@@ -190,7 +255,6 @@ async def _extract_linkedin_auth_cards(cards, max_cards: int) -> list[dict]:
     """Extract from LinkedIn's authenticated/logged-in job search view."""
     results = []
     for card in cards[:max_cards]:
-        # Find the job link — authenticated view uses various anchor patterns
         link_el = (
             await card.query_selector('a[href*="/jobs/view/"]')
             or await card.query_selector('a.job-card-container__link')
@@ -201,7 +265,6 @@ async def _extract_linkedin_auth_cards(cards, max_cards: int) -> list[dict]:
 
         raw_text = (await card.inner_text()).strip()
 
-        # Recency in authenticated view
         posted_at_el = (
             await card.query_selector("time")
             or await card.query_selector('[class*="listed-at"], [class*="listdate"]')
@@ -209,13 +272,11 @@ async def _extract_linkedin_auth_cards(cards, max_cards: int) -> list[dict]:
         )
         posted_at_text = None
         if posted_at_el:
-            # Prefer the datetime attribute if available
             posted_at_text = await posted_at_el.get_attribute("datetime")
             if not posted_at_text:
                 posted_at_text = (await posted_at_el.inner_text()).strip()
 
         if href and raw_text:
-            # Normalize LinkedIn URLs
             if href.startswith("/"):
                 href = "https://www.linkedin.com" + href
             href = href.split("?")[0]
@@ -242,7 +303,6 @@ async def _extract_linkedin_fallback_links(page: Page, job_links, max_cards: int
             continue
         seen_hrefs.add(href)
 
-        # Try to get surrounding text from parent element
         parent = await link.evaluate_handle("el => el.closest('li') || el.parentElement")
         raw_text = ""
         if parent:
@@ -281,7 +341,6 @@ async def _extract_indeed_cards(page: Page, max_cards: int = 30) -> list[dict]:
             
         raw_text = (await card.inner_text()).strip()
         
-        # Try to find recency text on Indeed
         posted_at_el = await card.query_selector(".date, .myJobsState, [class*='date'], [class*='Date']")
         posted_at_text = (await posted_at_el.inner_text()).strip() if posted_at_el else None
 
@@ -297,7 +356,6 @@ async def _extract_indeed_cards(page: Page, max_cards: int = 30) -> list[dict]:
 
 async def _extract_wellfound_cards(page: Page, max_cards: int = 30) -> list[dict]:
     """Extract job cards from Wellfound's search results."""
-    # Wellfound uses company-grouped results
     cards = await page.query_selector_all('[data-test="StartupResult"]')
     results = []
 
@@ -305,7 +363,6 @@ async def _extract_wellfound_cards(page: Page, max_cards: int = 30) -> list[dict
         if len(results) >= max_cards:
             break
 
-        # Each company card can have multiple jobs
         job_rows = await card.query_selector_all('div.flex.flex-col.py-4, [class*="jobListing"]')
         
         for row in job_rows:
@@ -321,12 +378,10 @@ async def _extract_wellfound_cards(page: Page, max_cards: int = 30) -> list[dict
                 base = await page.evaluate("window.location.origin")
                 href = base + href
             
-            # Clean up the href (remove slugs etc if needed)
             href = href.split("?")[0]
             
             raw_text = (await row.inner_text()).strip()
             
-            # Recency
             posted_at_el = await row.query_selector("div.flex.flex-wrap.items-center.gap-x-2.gap-y-1")
             posted_at_text = (await posted_at_el.inner_text()).strip() if posted_at_el else None
             if posted_at_text and "ago" not in posted_at_text.lower() and "today" not in posted_at_text.lower():
@@ -350,15 +405,12 @@ async def _scrape_wellfound_job_details(page: Page, url: str) -> dict:
         await page.goto(url, wait_until="domcontentloaded", timeout=20_000)
         await page.wait_for_timeout(1000)
         
-        # Salary
         salary_el = await page.query_selector(".styles_compensation__29m6I")
         salary = (await salary_el.inner_text()).strip() if salary_el else None
         
-        # Recruiter
         recruiter_name = None
         recruiter_link = None
         
-        # Try Hiring Team section
         hiring_team_el = await page.query_selector('.styles_hiringTeam__B83_d, [data-test="HiringTeam"]')
         if hiring_team_el:
             name_el = await hiring_team_el.query_selector(".styles_name__3vN9N, h4")
@@ -400,7 +452,19 @@ async def _scrape_linkedin_job_details(page: Page, url: str) -> dict:
         recruiter_email = None
         recruiter_link = None
         
-        # Strategy 1: Look for "Posted by" section - requires authentication
+        poster_el = await page.query_selector(".jobs-poster, .hirer-card__container")
+        if poster_el:
+            name_el = await poster_el.query_selector(".jobs-poster__name, .hirer-card__name, [class*='name']")
+            if name_el:
+                recruiter_name = (await name_el.inner_text()).strip()
+            
+            link_el = await poster_el.query_selector("a[href*='/in/']")
+            if link_el:
+                recruiter_link = await link_el.get_attribute("href")
+            
+            if recruiter_name:
+                logger.info(f"[LinkedIn recruiter] Found via Strategy 0 (poster card): {recruiter_name}")
+
         posted_by_el = await page.query_selector("a[href*='/in/'][href*='miniProfile']")
         if not posted_by_el:
             posted_by_el = await page.query_selector("[class*='show-more-less-html__markup'] a[href*='/in/']")
@@ -412,7 +476,6 @@ async def _scrape_linkedin_job_details(page: Page, url: str) -> dict:
                 recruiter_link = "https://www.linkedin.com" + recruiter_link
             logger.info(f"[LinkedIn recruiter] Found via Strategy 1 (Posted by): {recruiter_name}")
         
-        # Strategy 2: Look in job metadata section
         if not recruiter_name:
             job_details_section = await page.query_selector("[class*='description'] ~ div, [class*='top-card']")
             if job_details_section:
@@ -422,7 +485,6 @@ async def _scrape_linkedin_job_details(page: Page, url: str) -> dict:
                     recruiter_link = await recruiter_candidate.get_attribute("href")
                     logger.info(f"[LinkedIn recruiter] Found via Strategy 2 (metadata): {recruiter_name}")
         
-        # Strategy 3: Look in "About this job" section
         if not recruiter_name:
             about_section = await page.query_selector("[class*='about-the-job'], [class*='job-details']")
             if about_section:
@@ -432,7 +494,6 @@ async def _scrape_linkedin_job_details(page: Page, url: str) -> dict:
                     recruiter_link = await profile_link.get_attribute("href")
                     logger.info(f"[LinkedIn recruiter] Found via Strategy 3 (about): {recruiter_name}")
         
-        # Strategy 4: Last resort - search entire page
         if not recruiter_name:
             all_profile_links = await page.query_selector_all("a[href*='/in/']")
             logger.info(f"[LinkedIn recruiter] Strategy 4: found {len(all_profile_links)} profile links on page")
@@ -445,13 +506,11 @@ async def _scrape_linkedin_job_details(page: Page, url: str) -> dict:
                         logger.info(f"[LinkedIn recruiter] Found via Strategy 4 (fallback search): {recruiter_name}")
                         break
         
-        # Normalize recruiter link
         if recruiter_link:
             if recruiter_link.startswith("/"):
                 recruiter_link = "https://www.linkedin.com" + recruiter_link
             recruiter_link = recruiter_link.split("?")[0]
         
-        # Note: Email extraction is risky on LinkedIn - skip to avoid false positives
         
         if not recruiter_name:
             logger.info(f"[LinkedIn recruiter] No recruiter found (typical - requires authentication on LinkedIn)")
@@ -481,19 +540,15 @@ async def _scrape_indeed_job_details(page: Page, url: str) -> dict:
         recruiter_email = None
         recruiter_link = None
         
-        # Indeed: Look for company/recruiter contact info
-        # Check in "About this company" or contact sections
         company_contact = await page.query_selector('[class*="contact"], [class*="company"]')
         if company_contact:
             recruiter_name = (await company_contact.inner_text()).strip()
         
-        # Look for email addresses in the job posting
         page_text = await page.inner_text("body")
         email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', page_text)
         if email_match:
             recruiter_email = email_match.group(0)
         
-        # Look for phone contact
         phone_link = await page.query_selector("a[href*='tel:']")
         if phone_link:
             recruiter_link = await phone_link.get_attribute("href")
@@ -591,16 +646,20 @@ async def scrape_listing_page(
     try:
         page = await open_page(bm, normalized, platform=platform)
 
-        # Let JS render job cards — LinkedIn auth view is SPA-rendered, needs more time
         wait_time = 5000 if platform == "linkedin" else 3000
         await page.wait_for_timeout(wait_time)
 
-        cards = await extract_fn(page, max_cards=max_cards)
+        is_guest_mode = False
+        if platform == "linkedin":
+            cards, is_guest_mode = await extract_fn(page, max_cards=max_cards)
+            if is_guest_mode:
+                logger.info("[listing_scraper] LinkedIn GUEST mode — skipping recruiter detail scraping (requires auth)")
+        else:
+            cards = await extract_fn(page, max_cards=max_cards)
         
         await page.close()
         
-        # Extract recruiter details for each platform (on separate page loads)
-        if platform == "linkedin" and cards:
+        if platform == "linkedin" and cards and not is_guest_mode:
             logger.info(f"[listing_scraper] LinkedIn: starting recruiter detail scrape for {len(cards)} jobs")
             for i, card in enumerate(cards):
                 try:

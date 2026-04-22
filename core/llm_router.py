@@ -30,6 +30,7 @@ PROVIDERS = [
         "rpd_limit":  1_000,
         "tpm_limit":  12_000,
         "max_batch":  8,
+        "max_output_tokens": 8192,
     },
     {
         "name":       "llama_8b",
@@ -38,6 +39,7 @@ PROVIDERS = [
         "rpd_limit":  14_400,
         "tpm_limit":  6_000,
         "max_batch":  1,
+        "max_output_tokens": 8192,
     },
     {
         "name":       "llama4_scout",
@@ -46,6 +48,7 @@ PROVIDERS = [
         "rpd_limit":  1_000,
         "tpm_limit":  30_000,
         "max_batch":  10,
+        "max_output_tokens": 8192,
     },
     {
         "name":       "mistral",
@@ -54,6 +57,7 @@ PROVIDERS = [
         "rpd_limit":  9_999,
         "tpm_limit":  80_000,
         "max_batch":  5,
+        "max_output_tokens": 32768,
     },
 ]
 
@@ -128,9 +132,10 @@ class LLMRouter:
 
             try:
                 t0 = time.perf_counter()
+                capped_tokens = min(max_tokens, provider.get("max_output_tokens", 8192))
                 result = await self._call_provider(
                     provider, system, user_content,
-                    response_format=response_format, max_tokens=max_tokens
+                    response_format=response_format, max_tokens=capped_tokens
                 )
                 elapsed = time.perf_counter() - t0
 
@@ -157,7 +162,7 @@ class LLMRouter:
         for p in PROVIDERS:
             used = int(await self._redis.get(_RPD_KEY.format(name=p["name"])) or 0)
             score = used / p["rpd_limit"]
-            if used < p["rpd_limit"]:          # has remaining budget
+            if used < p["rpd_limit"]:
                 scored.append((score, p))
         scored.sort(key=lambda x: x[0])
         return [p for _, p in scored]
@@ -204,7 +209,7 @@ class LLMRouter:
         self, model: str, system: str, user_content: str,
         response_format: dict | None, max_tokens: int
     ) -> str:
-        from mistralai import Mistral
+        from mistralai.client import Mistral
         client = Mistral(api_key=os.getenv("MISTRAL_API_KEY", ""))
         kwargs: dict[str, Any] = {
             "model":      model,

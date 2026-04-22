@@ -1,8 +1,9 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
-# Install system dependencies
+RUN echo "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99-ignore-valid-until
+
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
@@ -13,7 +14,6 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
 COPY . .
 
 
@@ -22,7 +22,6 @@ ENV PYTHONPATH=/app:$PYTHONPATH
 
 EXPOSE 8001
 
-# Make startup script executable and set as entrypoint
 RUN chmod +x /app/scripts/wait_and_migrate.sh
 
 CMD ["/bin/bash", "/app/scripts/wait_and_migrate.sh"]

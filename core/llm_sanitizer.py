@@ -20,8 +20,8 @@ _INJECTION_PATTERNS = [
 
 _COMPILED = [re.compile(p, re.IGNORECASE) for p in _INJECTION_PATTERNS]
 
-MAX_TOKENS_HIGH = 1400   # llama-3.3-70b-versatile — ~2000 tokens, well within 12K TPM
-MAX_TOKENS_LOW  = 700    # llama-3.1-8b — ~1000 tokens, fits in 6K TPM per single call
+MAX_TOKENS_HIGH = 350
+MAX_TOKENS_LOW  = 250
 
 
 def sanitize_job_text(text: str, token_budget: int = MAX_TOKENS_HIGH) -> str:

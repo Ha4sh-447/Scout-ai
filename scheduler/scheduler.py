@@ -9,10 +9,8 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-# Create scheduler with event loop management
 scheduler = AsyncIOScheduler(timezone="UTC")
 
-# Track if recovery has already run this session
 _recovery_complete = False
 
 async def _start_user_pipeline(user_id: str, run_id: str, celery_task_id: str):
@@ -50,7 +48,7 @@ async def _recover_scheduled_pipelines():
             select(PipelineRun).where(
                 and_(
                     PipelineRun.is_scheduled == True,
-                    PipelineRun.status == "done",  # ← Only "done", not "running"
+                    PipelineRun.status == "done",
                     PipelineRun.completed_at.isnot(None)
                 )
             )
@@ -86,12 +84,7 @@ async def _recover_scheduled_pipelines():
                     await purge_user_tasks(db, run.user_id)
                     
                     celery_task_id = str(uuid.uuid4())
-                    # IMPORTANT: Keep status as "done" so scheduler can reschedule it again next cycle
-                    # Celery task will change it to "running" when it actually starts
-                    # run.status = "pending"  # ❌ Don't do this - keeps pipeline out of query
                     run.execution_count = run.execution_count + 1
-                    # Don't update started_at here - let Celery task do it when it actually runs
-                    # run.started_at = datetime.utcnow()  # ❌ Let the task update this
                     run.celery_task_id = celery_task_id
                     run.error_message = None
                     
@@ -129,13 +122,11 @@ async def _check_and_reschedule_pipelines():
     from workers.utils import purge_user_tasks
     
     async with AsyncSessionLocal() as db:
-        # IMPORTANT: Only look for "done" status, NOT "running"
-        # If "running", the task is still executing and should NOT be interrupted
         result = await db.execute(
             select(PipelineRun).where(
                 and_(
                     PipelineRun.is_scheduled == True,
-                    PipelineRun.status == "done",  # ← Only "done", not "running"
+                    PipelineRun.status == "done",
                     PipelineRun.completed_at.isnot(None)
                 )
             )
@@ -158,12 +149,7 @@ async def _check_and_reschedule_pipelines():
                     await purge_user_tasks(db, run.user_id)
                     
                     celery_task_id = str(uuid.uuid4())
-                    # IMPORTANT: Keep status as "done" so scheduler can continue to find and reschedule it
-                    # Celery task will change it to "running" when it actually starts
-                    # run.status = "pending"  # ❌ Don't do this - breaks scheduler query
                     run.execution_count = run.execution_count + 1
-                    # Don't update started_at here - let Celery task do it when it actually runs
-                    # run.started_at = datetime.utcnow()  # ❌ Let the task update this
                     run.celery_task_id = celery_task_id
                     run.error_message = None
                     
@@ -172,7 +158,6 @@ async def _check_and_reschedule_pipelines():
                     
                     logger.info(f"[Scheduler] Reset run {run.id} for reexecution (execution_count now: {run.execution_count})")
                     
-                    # Submit task to Celery
                     await _start_user_pipeline(user_id=run.user_id, run_id=run.id, celery_task_id=celery_task_id)
                     logger.info(f"[Scheduler] Task submitted to Celery for {run.id}")
                     
@@ -196,11 +181,11 @@ async def _cleanup_old_job_results():
             await db.commit()
             deleted = result.rowcount
             if deleted:
-                logger.info(f"[Cleanup] 🗑️  Deleted {deleted} job result(s) older than 7 days")
+                logger.info(f"[Cleanup] Deleted {deleted} job result(s) older than 7 days")
             else:
-                logger.info("[Cleanup] ✅ No stale job results to delete")
+                logger.info("[Cleanup] No stale job results to delete")
     except Exception as e:
-        logger.error(f"[Cleanup] ❌ Failed to clean up old job results: {e}", exc_info=True)
+        logger.error(f"[Cleanup] Failed to clean up old job results: {e}", exc_info=True)
 
 
 def _job_id(user_id:str):
@@ -224,7 +209,6 @@ def unschedule_user(user_id: str):
         scheduler.remove_job(job_id)
         logger.info(f"[scheduler] Unscheduled user {user_id}")
 
-# Sync every user
 async def sync_all_users():
     """
     DEPRECATED: User-based scheduler is no longer used.
@@ -234,7 +218,6 @@ async def sync_all_users():
 
 
 async def start_scheduler():
-    # Check for scheduled pipelines every 1 minute
     scheduler.add_job(
             _check_and_reschedule_pipelines,
             trigger=IntervalTrigger(minutes=1),
@@ -242,7 +225,6 @@ async def start_scheduler():
             replace_existing=True,
     )
 
-    # Clean up job results older than 7 days — runs every 24 hours
     scheduler.add_job(
             _cleanup_old_job_results,
             trigger=IntervalTrigger(hours=24),
@@ -253,10 +235,8 @@ async def start_scheduler():
     scheduler.start()
     logger.info(f"[scheduler] Started")
 
-    # Run first check immediately
     await _check_and_reschedule_pipelines()
 
-    # Run first cleanup immediately on startup
     await _cleanup_old_job_results()
 
 

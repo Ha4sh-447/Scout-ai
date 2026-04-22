@@ -23,7 +23,6 @@ export default function Dashboard() {
   const [liAtCookie, setLiAtCookie] = useState("");
   const [isTriggerDialogOpen, setIsTriggerDialogOpen] = useState(false);
   
-  // Scoped search params
   const [searchQuery, setSearchQuery] = useState("");
   const [location, setLocation] = useState("");
   const [experience, setExperience] = useState("0");
@@ -46,7 +45,6 @@ export default function Dashboard() {
   const [authStatus, setAuthStatus] = useState<any>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   
-  // Pipeline scheduling options
   const [enableScheduler, setEnableScheduler] = useState(false);
   const [schedulerInterval, setSchedulerInterval] = useState(3);
 
@@ -54,23 +52,19 @@ export default function Dashboard() {
     if (status === "authenticated" && session?.user) {
       loadData();
       
-      // Poll more frequently to catch database changes quickly
       const pollInterval = setInterval(async () => {
         const token = (session as any)?.user?.accessToken || "";
         try {
           const runsData = await fetchRuns(token);
           setRuns(runsData);
           
-          // Check if active run has completed
           const wasActive = activeRunId !== null;
           const activeRun = runsData.find((r: any) => r.status === "running" || r.status === "pending");
           const isNowActive = activeRun !== undefined;
           
-          // If was active but now not, do a full refresh
           if (wasActive && !isNowActive) {
             await loadData(true);
           } else {
-            // Otherwise just update jobs and stats
             const jobsData = await fetchJobs(token);
             setJobs(jobsData);
             setStats({
@@ -108,7 +102,6 @@ export default function Dashboard() {
       setSavedSearchLinks(linksData);
       setAuthStatus(statusData);
       setUploadedResumes(resumesData);
-      // Prefill customUrls with saved links if the field hasn't been manually set
       if (linksData.length > 0) {
         setCustomUrls(prev => prev.trim() ? prev : linksData.map((l: any) => l.url).join('\n'));
       }
@@ -119,7 +112,6 @@ export default function Dashboard() {
       setLocation(settingsData.location || "India");
       setExperience(settingsData.job_experience || "0");
       
-      // Check for active runs
       const active = runsData.find((r: any) => r.status === "running" || r.status === "pending");
       if (active) setActiveRunId(active.id);
       else setActiveRunId(null);
@@ -133,7 +125,6 @@ export default function Dashboard() {
   const handleTrigger = async () => {
     const token = (session as any)?.user?.accessToken || "";
     
-    // Gate: require at least one resume
     if (uploadedResumes.length === 0) {
       alert("Please upload at least one resume before starting a pipeline.");
       setActiveTab("resumes");
@@ -151,7 +142,6 @@ export default function Dashboard() {
       console.log("[Dashboard] location:", location);
       console.log("[Dashboard] experience:", experience);
       
-      // Save LinkedIn/Wellfound links if present
       if (urlList.length > 0) {
         const linkedinOrWellfoundUrls = urlList.filter(u => 
           u.toLowerCase().includes("linkedin") || u.toLowerCase().includes("wellfound")
@@ -198,7 +188,6 @@ export default function Dashboard() {
       setIsSearchExpanded(false);
       setIsTriggerDialogOpen(false);
       
-      // Reset scheduling state for next trigger
       console.log("[Dashboard] Resetting enableScheduler to false and interval to 3");
       setEnableScheduler(false);
       setSchedulerInterval(3);
@@ -215,7 +204,6 @@ export default function Dashboard() {
     if (rawSettings?.search_queries) {
       setTempSearchQueries(rawSettings.search_queries.join(", "));
     }
-    // Note: Other fields are directly bound to rawSettings in the JSX inputs, so they prefill automatically!
     setLiAtCookie(""); // Ensure password field is cleared
     setIsSettingsOpen(true);
   };
@@ -259,7 +247,6 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen bg-[#0a0a0c] text-slate-200">
-      {/* Sidebar */}
       <aside className="w-64 border-r border-slate-900 flex flex-col glass z-30">
         <div className="p-6 flex items-center gap-3">
           <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center font-bold text-black">S</div>
@@ -292,7 +279,6 @@ export default function Dashboard() {
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 overflow-y-auto relative">
         {!(session as any)?.user?.accessToken && status === "authenticated" && (
           <div className="bg-amber-500/10 border-b border-amber-500/20 p-2 text-center text-[10px] font-bold text-amber-500 flex items-center justify-center gap-2">
@@ -432,7 +418,6 @@ export default function Dashboard() {
         </header>
 
         <div className="p-8">
-           {/* Metrics/Stats Bar */}
            <div className="grid grid-cols-4 gap-6 mb-12">
               <StatCard label="Jobs Found" value={stats.jobsFound.toString()} icon={<BriefcaseIcon size={20} className="text-emerald-500" />} />
               <StatCard label="Emails Sent" value={runs.filter((r: any) => r.emails_sent).length.toString()} icon={<Mail className="text-blue-500" />} />
@@ -462,7 +447,6 @@ export default function Dashboard() {
            {activeTab === "overview" ? (
              <div className="p-8 space-y-8">
 
-               {/* Welcome Banner */}
                <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-500/10 via-slate-900 to-slate-900 border border-emerald-500/20 p-8">
                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-4 inline-block">
                    <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
@@ -476,7 +460,6 @@ export default function Dashboard() {
                  </p>
                </div>
 
-               {/* Setup Checklist */}
                <div className="glass rounded-3xl border border-slate-800 overflow-hidden">
                  <div className="px-8 py-5 border-b border-slate-800 flex items-center justify-between">
                    <h3 className="text-white font-bold text-lg">Setup Checklist</h3>
@@ -556,7 +539,6 @@ export default function Dashboard() {
                  </div>
                </div>
 
-               {/* Cumulative Stats */}
                <div>
                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 px-1">All-time Pipeline Stats</h3>
                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -583,7 +565,6 @@ export default function Dashboard() {
                  </div>
                </div>
 
-               {/* System Status */}
                <div className="glass p-7 rounded-3xl border border-slate-800">
                  <h3 className="text-white font-bold mb-5">System Status</h3>
                  <div className="space-y-3">
@@ -606,7 +587,6 @@ export default function Dashboard() {
                  </div>
                </div>
 
-               {/* Quick Actions */}
                <div className="glass p-7 rounded-3xl border border-slate-800">
                  <h3 className="text-white font-bold mb-5">Quick Actions</h3>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -656,7 +636,6 @@ export default function Dashboard() {
              />
            ) : activeTab === "resumes" ? (
              <div className="p-8 space-y-8">
-               {/* Resume Upload Section */}
                <div className="glass p-8 rounded-3xl border border-slate-800 space-y-6">
                  <div>
                    <h3 className="text-xl font-bold text-white mb-2">Upload Resumes</h3>
@@ -692,7 +671,6 @@ export default function Dashboard() {
                          setUploading(true);
                          await uploadResume(resumeFile, token);
                          
-                         // Fetch updated resumes from backend
                          const resumesData = await fetchResumes(token);
                          setUploadedResumes(resumesData);
                          
@@ -712,7 +690,6 @@ export default function Dashboard() {
                  </div>
                </div>
 
-               {/* Uploaded Resumes List */}
                {uploadedResumes.length > 0 && (
                  <div className="glass p-8 rounded-3xl border border-slate-800 space-y-4">
                    <div>
@@ -733,7 +710,6 @@ export default function Dashboard() {
                  </div>
                )}
 
-               {/* Resume Summary Section */}
                <div className="glass p-8 rounded-3xl border border-slate-800 space-y-4">
                  <div>
                    <h3 className="text-lg font-bold text-white mb-2">Resume Summary</h3>
@@ -763,7 +739,6 @@ export default function Dashboard() {
              </div>
            ) : activeTab === "savedlinks" ? (
              <div className="p-8 space-y-8">
-               {/* Browser Authentication Section */}
                <div className="glass p-8 rounded-3xl border border-slate-800 space-y-6">
                  <div className="flex items-start justify-between">
                    <div>
@@ -801,7 +776,6 @@ export default function Dashboard() {
                  </div>
 
                  <div className="grid grid-cols-2 gap-4">
-                   {/* LinkedIn Status */}
                    <div className={`p-4 rounded-lg border-2 transition-colors ${authStatus?.has_linkedin ? 'bg-blue-500/10 border-blue-500/30' : 'bg-slate-900/50 border-slate-700'}`}>
                      <div className="flex items-center gap-2 mb-2">
                        {authStatus?.has_linkedin ? (
@@ -814,7 +788,6 @@ export default function Dashboard() {
                      <p className="text-xs text-slate-400">{authStatus?.has_linkedin ? 'Connected' : 'Not connected'}</p>
                    </div>
 
-                   {/* Wellfound Status */}
                    <div className={`p-4 rounded-lg border-2 transition-colors ${authStatus?.has_wellfound ? 'bg-orange-500/10 border-orange-500/30' : 'bg-slate-900/50 border-slate-700'}`}>
                      <div className="flex items-center gap-2 mb-2">
                        {authStatus?.has_wellfound ? (
@@ -840,7 +813,6 @@ export default function Dashboard() {
                          alert("Failed to start authentication: " + (error as Error).message);
                        } finally {
                          setIsAuthenticating(false);
-                         // Auto-refresh status after a delay to check if auth completed
                          setTimeout(async () => {
                            const token = (session as any)?.user?.accessToken || "";
                            try {
@@ -887,7 +859,6 @@ export default function Dashboard() {
                  </div>
                </div>
 
-               {/* Save New Search Links */}
                <div className="glass p-8 rounded-3xl border border-slate-800 space-y-6">
                  <div>
                    <h3 className="text-xl font-bold text-white mb-2">Add Search URLs</h3>
@@ -924,7 +895,6 @@ export default function Dashboard() {
                  </button>
                </div>
 
-               {/* Saved Search Links List */}
                {savedSearchLinks.length > 0 ? (
                  <div className="glass p-8 rounded-3xl border border-slate-800 space-y-4">
                    <div>
@@ -970,7 +940,6 @@ export default function Dashboard() {
                  </div>
                )}
 
-               {/* Info Box */}
                <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-6">
                  <h4 className="text-sm font-bold text-blue-400 mb-2">How It Works</h4>
                  <ul className="text-sm text-blue-300/80 space-y-1">
@@ -984,7 +953,6 @@ export default function Dashboard() {
              </div>
            ) : (
              <>
-               {/* Job Grid */}
                {jobs.length > 0 ? (
                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                     {jobs.map((job) => (
@@ -1017,7 +985,6 @@ export default function Dashboard() {
         </div>
       </main>
 
-      {/* Settings Modal */}
       <AnimatePresence>
         {isSettingsOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -1154,7 +1121,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Trigger Pipeline Scheduling Dialog */}
         {isTriggerDialogOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
              <motion.div 
@@ -1337,7 +1303,6 @@ function JobCard({ id, title, company, score, location, skills, time, url, platf
          </div>
       </motion.div>
 
-      {/* Job Details Modal */}
       <AnimatePresence>
         {showDetails && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setShowDetails(false)}>
@@ -1366,7 +1331,11 @@ function JobCard({ id, title, company, score, location, skills, time, url, platf
                   </div>
                   <div>
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Platform</label>
-                    <p className={`text-lg font-semibold mt-2 ${getPlatformColor(platform)}`}>{platform}</p>
+                    <div className="mt-2">
+                      <span className={`px-3 py-1 text-sm font-bold uppercase tracking-wider rounded-lg border inline-block ${getPlatformColor(platform)}`}>
+                        {platform || "Unknown"}
+                      </span>
+                    </div>
                   </div>
                   <div>
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Match Score</label>
@@ -1389,28 +1358,70 @@ function JobCard({ id, title, company, score, location, skills, time, url, platf
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {emailDraft && (
-                    <div>
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block flex items-center gap-2">
-                        <Mail size={14} /> Email Draft
-                      </label>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                          <Mail size={14} /> Email Draft
+                        </label>
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText(emailDraft);
+                            const btn = document.getElementById(`copy-email-${id}`);
+                            if (btn) {
+                              const originalText = btn.innerHTML;
+                              btn.innerHTML = "Copied!";
+                              btn.classList.add("text-emerald-400");
+                              setTimeout(() => {
+                                btn.innerHTML = originalText;
+                                btn.classList.remove("text-emerald-400");
+                              }, 2000);
+                            }
+                          }}
+                          id={`copy-email-${id}`}
+                          className="text-[10px] font-bold text-slate-400 hover:text-white transition-colors uppercase tracking-widest"
+                        >
+                          Copy
+                        </button>
+                      </div>
                       <textarea
                         readOnly
                         value={emailDraft}
-                        className="w-full h-40 bg-slate-900 border border-slate-800 rounded-xl p-4 text-slate-300 text-sm resize-none"
+                        className="w-full h-48 bg-slate-900/50 border border-slate-800 rounded-2xl p-4 text-slate-300 text-sm font-mono leading-relaxed resize-none focus:outline-none focus:border-emerald-500/50"
                       />
                     </div>
                   )}
                   {linkedinDraft && (
-                    <div>
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block flex items-center gap-2">
-                        <Briefcase size={14} /> LinkedIn Draft
-                      </label>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                          <Briefcase size={14} /> LinkedIn Draft
+                        </label>
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText(linkedinDraft);
+                            const btn = document.getElementById(`copy-li-${id}`);
+                            if (btn) {
+                              const originalText = btn.innerHTML;
+                              btn.innerHTML = "Copied!";
+                              btn.classList.add("text-emerald-400");
+                              setTimeout(() => {
+                                btn.innerHTML = originalText;
+                                btn.classList.remove("text-emerald-400");
+                              }, 2000);
+                            }
+                          }}
+                          id={`copy-li-${id}`}
+                          className="text-[10px] font-bold text-slate-400 hover:text-white transition-colors uppercase tracking-widest"
+                        >
+                          Copy
+                        </button>
+                      </div>
                       <textarea
                         readOnly
                         value={linkedinDraft}
-                        className="w-full h-40 bg-slate-900 border border-slate-800 rounded-xl p-4 text-slate-300 text-sm resize-none"
+                        className="w-full h-48 bg-slate-900/50 border border-slate-800 rounded-2xl p-4 text-slate-300 text-sm font-mono leading-relaxed resize-none focus:outline-none focus:border-emerald-500/50"
                       />
                     </div>
                   )}
@@ -1446,7 +1457,6 @@ function JobCard({ id, title, company, score, location, skills, time, url, platf
   );
 }
 
-// Custom Icons
 function BriefcaseIcon({ size, className }: { size: number, className?: string }) {
   return <Briefcase size={size} className={className} />;
 }

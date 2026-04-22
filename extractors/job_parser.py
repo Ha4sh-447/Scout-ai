@@ -90,9 +90,8 @@ async def parse_jobs_batch(raw_jobs) -> tuple[list[Job], list[str]]:
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     router    = await get_router(redis_url)
 
-    max_batch = 10  # router picks the right size per provider internally
+    max_batch = 3  # keep prompts under llama_8b's 6K TPM limit
 
-    # Split into chunks
     chunks = [raw_jobs[i:i+max_batch] for i in range(0, len(raw_jobs), max_batch)]
 
     for chunk in chunks:
@@ -114,7 +113,7 @@ async def parse_jobs_batch_for_user(raw_jobs, user_id: str) -> tuple[list[Job], 
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     router    = await get_router(redis_url)
 
-    chunks = [raw_jobs[i:i+10] for i in range(0, len(raw_jobs), 10)]
+    chunks = [raw_jobs[i:i+3] for i in range(0, len(raw_jobs), 3)]
     for chunk in chunks:
         chunk_errors = await _parse_chunk(chunk, router, parsed, user_id=user_id)
         errors.extend(chunk_errors)
@@ -153,14 +152,13 @@ async def _parse_chunk(
                 user_id      = user_id,
                 cache_key    = cache_key,
                 response_format={"type": "json_object"} if len(raw_jobs) == 1 else None,
-                max_tokens   = 1024 * len(raw_jobs),
+                max_tokens   = min(1024 * len(raw_jobs), 8192),
             )
 
             raw_json = _strip_markdown_fences(raw_json)
 
             data = json.loads(raw_json)
             if isinstance(data, dict):
-                # Single job came back as object — wrap in list
                 data = [data]
 
             for item in data:

@@ -9,7 +9,7 @@ from models.jobs import Job, RawJobData
 
 class JobDiscoveryState(TypedDict):
     user_id: str
-    urls: list[str]  # user-uploaded links
+    urls: list[str]
     search_queries: list[str]  
     location: str | None = None  
     experience_level: str | None = None 
@@ -17,13 +17,15 @@ class JobDiscoveryState(TypedDict):
     scraper_config: ScraperConfig
     browser_session: dict | None = None
 
-    # Resume matching config 
     qdrant_cfg: QdrantConfig
     matching_cfg: ResumeMatchingConfig
 
-    raw_jobs: Annotated[list[RawJobData], operator.add]
+    _scraped_raw_jobs: list[RawJobData]
 
-    parsed_jobs: list[Job]
+    raw_jobs: Annotated[list[RawJobData], operator.add]
+    _raw_jobs_parsed_count: int
+
+    parsed_jobs: Annotated[list[Job], operator.add]
 
     unique_jobs: Annotated[list[Job], operator.add]
 

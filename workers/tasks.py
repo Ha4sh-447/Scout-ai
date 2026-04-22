@@ -115,7 +115,6 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                 source_quality_weight=0.075,
             )
 
-            # Discovery
             all_jobs = []
             for query in (settings.search_queries or []):
                 try:
@@ -133,7 +132,9 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                         "qdrant_cfg":    qdrant_cfg,
                         "matching_cfg":  matching_cfg,
                         "browser_session": settings.browser_session,
+                        "_scraped_raw_jobs": [],
                         "raw_jobs": [], "parsed_jobs": [], "unique_jobs": [],
+                        "_raw_jobs_parsed_count": 0,
                         "errors": [], "status": "starting",
                         "freshness": "default", "retry_count": 0,
                     })
@@ -151,7 +152,6 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                 logger.info(f"[pipeline] No new jobs found for run {run_id}")
                 return
 
-            # Matching
             match_result = await resume_matching_graph.ainvoke({
                 "user_id":      user_id,
                 "unique_jobs":  all_jobs,
@@ -166,7 +166,6 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                 logger.info(f"[pipeline] No jobs passed match threshold for run {run_id}")
                 return
 
-            # Ranking
             rank_result = await ranking_graph.ainvoke({
                 "user_id":      user_id,
                 "matched_jobs": matched_jobs,
@@ -175,7 +174,6 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
             })
             ranked_jobs = rank_result.get("ranked_jobs", [])
 
-            # Messaging
             if getattr(settings, "enable_outreach", True):
                 msg_result = await messaging_graph.ainvoke({
                     "user_id":          user_id,
@@ -228,7 +226,6 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
             await db.commit()
             logger.info(f"[pipeline] Saved {saved_count} new jobs ({len(jobs_with_drafts) - saved_count} duplicates skipped)")
 
-            # Notification
             emails_sent = False
             if settings.notification_email:
                 try:
@@ -291,7 +288,7 @@ async def _finish_run(
         run.jobs_matched = jobs_matched
         run.jobs_ranked = jobs_ranked
         run.emails_sent = emails_sent
-        run.completed_at = datetime.utcnow()   # naive UTC — matches TIMESTAMP WITHOUT TIME ZONE
+        run.completed_at = datetime.utcnow()
         
         run.status = "done"
         

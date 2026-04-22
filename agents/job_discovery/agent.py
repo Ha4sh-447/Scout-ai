@@ -19,33 +19,59 @@ logger = logging.getLogger(__name__)
 
 
 async def scrape_node(state: JobDiscoveryState) -> dict:
-    """Scrape job URLs."""
+    """Scrape job URLs. If a stored session causes errors, retry in guest mode."""
     logger.info(
         f"[scrapper node] scrapping {len(state['urls'])} URLs for user {state['user_id']}"
     )
 
     config = state.get("scraper_config") or ScraperConfig()
 
-    # Use session from DB if available, else fallback to config file path
-    storage_state = state.get("browser_session") or config.browser_state_path
+    browser_session = state.get("browser_session")
+    storage_state = browser_session or config.browser_state_path
     
-    # Initialize adaptive freshness state if missing
+    if storage_state:
+        if isinstance(storage_state, dict):
+            cookies_count = len(storage_state.get("cookies", []))
+            logger.info(f"[scrapper node] Using browser session from database ({cookies_count} cookies)")
+        else:
+            logger.info(f"[scrapper node] Using browser session from path: {storage_state}")
+    else:
+        logger.warning("[scrapper node] No browser session provided, using fresh context (guest mode)")
+    
     freshness = state.get("freshness", "default")
     retry_count = state.get("retry_count", 0)
     platforms = state.get("platforms", ["linkedin"])
     location = state.get("location")
 
+    search_queries = state.get("search_queries", [])
+
     async with BrowserManager(headless=True, storage_state=storage_state) as bm:
-        search_queries = state.get("search_queries", [])
         raw_jobs, errors = await load_job_pages(
             bm, state["urls"], search_queries=search_queries, config=config, 
             freshness=freshness, platforms=platforms, location=location
         )
 
+    has_session = isinstance(storage_state, dict) and bool(storage_state)
+    if has_session and not raw_jobs and errors:
+        session_errors = [e for e in errors if "REDIRECT" in e.upper() or "ERR_" in e.upper() or "timeout" in e.lower()]
+        if session_errors:
+            logger.warning(f"[scrapper node] ⚠️ Scraping FAILED with stored session ({len(errors)} errors). Retrying in GUEST mode...")
+            async with BrowserManager(headless=True, storage_state=None) as bm_guest:
+                raw_jobs, guest_errors = await load_job_pages(
+                    bm_guest, state["urls"], search_queries=search_queries, config=config,
+                    freshness=freshness, platforms=platforms, location=location
+                )
+            if raw_jobs:
+                logger.info(f"[scrapper node] ✅ Guest mode fallback succeeded: {len(raw_jobs)} jobs scraped")
+                errors = guest_errors
+            else:
+                logger.warning(f"[scrapper node] Guest mode also failed with {len(guest_errors)} errors")
+                errors.extend(guest_errors)
+
     logger.info(f"[scrapper node] Got {len(raw_jobs)} pages, {len(errors)} errors")
 
     return {
-        "raw_jobs": raw_jobs,
+        "_scraped_raw_jobs": raw_jobs,
         "errors": errors,
         "status": "scraping_done",
         "freshness": freshness,
@@ -57,11 +83,11 @@ async def scrape_node(state: JobDiscoveryState) -> dict:
 
 async def deduplicate_raw_node(state: JobDiscoveryState) -> dict:
     """Deduplicate raw jobs before parsing."""
-    scraped_raw_jobs = state.get("raw_jobs", [])
+    scraped_raw_jobs = state.get("_scraped_raw_jobs", [])
     config = state.get("scraper_config") or ScraperConfig()
     
     logger.info(f"[deduplicate_raw node] ===== START RAW DEDUPLICATION =====")
-    logger.info(f"[deduplicate_raw node] Input: {len(scraped_raw_jobs)} scraped raw jobs")
+    logger.info(f"[deduplicate_raw node] Input: {len(scraped_raw_jobs)} scraped raw jobs (from current scrape pass)")
 
     if not scraped_raw_jobs:
         logger.info(f"[deduplicate_raw node] No raw jobs to process, skipping")
@@ -84,29 +110,35 @@ async def deduplicate_raw_node(state: JobDiscoveryState) -> dict:
     logger.info(f"[deduplicate_raw node] OUTPUT: {len(unique_raw_jobs_for_parsing)} unique raw jobs → PASS TO PARSE NODE")
 
     return {
-        "raw_jobs": unique_raw_jobs_for_parsing,  # Only unique raw jobs passed to parse_node
+        "raw_jobs": unique_raw_jobs_for_parsing,
         "status": "raw_dedup_done",
     }
 
 
 async def parse_node(state: JobDiscoveryState) -> dict:
-    """Parse unique raw jobs into structured data."""
-    unique_raw_jobs = state.get("raw_jobs", [])
+    """Parse unique raw jobs into structured data.
+    
+    Only parses NEW raw_jobs added since the last parse (tracked by
+    _raw_jobs_parsed_count) to avoid re-parsing on retries.
+    """
+    all_raw_jobs = state.get("raw_jobs", [])
+    already_parsed = state.get("_raw_jobs_parsed_count", 0)
+    new_raw_jobs = all_raw_jobs[already_parsed:]
     
     logger.info(f"[parse node] ===== START PARSING UNIQUE JOBS =====")
-    logger.info(f"[parse node] Input: {len(unique_raw_jobs)} unique raw jobs (already deduplicated)")
+    logger.info(f"[parse node] Total accumulated raw jobs: {len(all_raw_jobs)}, already parsed: {already_parsed}, new to parse: {len(new_raw_jobs)}")
 
-    if not unique_raw_jobs:
-        logger.info(f"[parse node] No jobs to parse, returning empty")
-        return {"parsed_jobs": [], "status": "parse_done"}
+    if not new_raw_jobs:
+        logger.info(f"[parse node] No new jobs to parse, returning empty")
+        return {"parsed_jobs": [], "status": "parse_done", "_raw_jobs_parsed_count": len(all_raw_jobs)}
 
     dev_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
-    raw_jobs_to_parse = unique_raw_jobs
-    if dev_mode and len(unique_raw_jobs) > 3:
-        raw_jobs_to_parse = unique_raw_jobs[:3]
-        logger.warning(f"⚠️ DEVELOPMENT MODE: Limiting LLM parsing to {len(raw_jobs_to_parse)} jobs (skipping {len(unique_raw_jobs) - len(raw_jobs_to_parse)} jobs)")
+    raw_jobs_to_parse = new_raw_jobs
+    if dev_mode and len(new_raw_jobs) > 3:
+        raw_jobs_to_parse = new_raw_jobs[:3]
+        logger.warning(f"⚠️ DEVELOPMENT MODE: Limiting LLM parsing to {len(raw_jobs_to_parse)} jobs (skipping {len(new_raw_jobs) - len(raw_jobs_to_parse)} jobs)")
 
-    logger.info(f"[parse node] Sending {len(raw_jobs_to_parse)} unique jobs to LLM for parsing...")
+    logger.info(f"[parse node] Sending {len(raw_jobs_to_parse)} new jobs to LLM for parsing...")
     parsed_jobs, errors = await parse_jobs_batch(raw_jobs_to_parse)
     
     logger.info(f"[parse node] ===== END PARSING =====")
@@ -116,6 +148,7 @@ async def parse_node(state: JobDiscoveryState) -> dict:
         "parsed_jobs": parsed_jobs,
         "errors": errors,
         "status": "parse_done",
+        "_raw_jobs_parsed_count": len(all_raw_jobs),
     }
 
 
@@ -212,29 +245,24 @@ async def deduplicate_node(state: JobDiscoveryState) -> dict:
 def _is_within_hours(posted_at_text: str | None, max_hours: int) -> bool:
     """Tiered recency filter."""
     if not posted_at_text:
-        return True  # If unknown, keep it for safety
+        return True
     
     s = posted_at_text.lower()
     
-    # Detect hours
     match_hours = re.search(r"(\d+)\s*(h|hour|hr)", s)
     if match_hours:
         val = int(match_hours.group(1))
         return val <= max_hours
     
-    # Detect minutes/seconds/just now
     if any(kw in s for kw in ["minute", "min", "sec", "just now", "moment"]):
         return True
 
-    # Detect days/yesterday
     if any(kw in s for kw in ["day", "yesterday"]):
         return max_hours >= 24
 
-    # Detect weeks/months/years
     if any(kw in s for kw in ["week", "month", "year"]):
         return max_hours > 100
 
-    # Default value True
     return True
 
 
@@ -247,7 +275,6 @@ def _parse_exp_years(exp_str: str | None) -> tuple[float, float]:
     if "fresher" in s or "intern" in s or "graduate" in s:
         return 0, 1
     
-    # Try to find numbers
     nums = re.findall(r"(\d+)", s)
     if not nums:
         if "senior" in s or "lead" in s or "staff" in s:
@@ -258,7 +285,6 @@ def _parse_exp_years(exp_str: str | None) -> tuple[float, float]:
     if len(ints) >= 2:
         return float(min(ints)), float(max(ints))
     
-    # Single number: "2+ years" -> [2, 12] or just "3 years" -> [3, 3]
     val = float(ints[0])
     if "+" in s or "above" in s or "more" in s:
         return val, val + 10
@@ -289,4 +315,3 @@ async def resume_matching_node(state: JobDiscoveryState) -> dict:
         "errors":       result.get("errors", []),
         "status":       result.get("status", "matching_done"),
     }
-

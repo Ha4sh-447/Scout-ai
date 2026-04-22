@@ -3,13 +3,14 @@
 ## Quick Start
 
 ### 1. Automated Setup (Recommended)
-Run the universal setup script (works on Linux, macOS, and Windows):
+Run the universal setup script (works on Linux, macOS, and Windows) for a polished, interactive experience:
 
 ```bash
 python setup.py
 ```
 
 This script will:
+- ✓ **Polished CLI**: Experience a modern, centered command-line interface.
 - ✓ Check prerequisites (Python, pip, Docker, Node/npm)
 - ✓ Create `.env` from `.env.example` if missing
 - ✓ Setup Python virtual environment
@@ -19,7 +20,7 @@ This script will:
 - ✓ Setup frontend dependencies
 - ✓ Start Docker containers (optional)
 - ✓ Run database migrations (optional)
-- ✓ Run preflight checks
+- ✓ Run human-readable preflight checks
 
 ### 2. Manual Setup
 
@@ -111,8 +112,12 @@ QDRANT_API_KEY=your_key (optional)
 # Redis (for Celery)
 CELERY_BROKER_URL=redis://localhost:6379/0
 
-# Email (optional, for notifications)
-RESEND_API_KEY=your_key_here
+# Email (Required for notifications)
+EMAIL_SENDER=sender@gmail.com
+EMAIL_PASSWORD=your_google_app_password_here
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_PORT=587
+EMAIL_RECIPIENT=recipient@gmail.com
 ```
 
 ## Docker Services

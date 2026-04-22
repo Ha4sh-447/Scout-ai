@@ -12,7 +12,7 @@ cd agentic_job_finder
 python setup.py        # python3 on Linux/macOS if needed
 ```
 
-The script walks you through every step interactively — no bash or PowerShell required.
+The script walks you through every step in a **polished, interactive CLI** — no bash or PowerShell knowledge required.
 
 ---
 
