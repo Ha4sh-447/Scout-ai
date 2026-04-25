@@ -1,6 +1,7 @@
 .venv
 .env
 .python-version
+.agents
 
 # Python cache
 __pycache__/
@@ -32,3 +33,4 @@ mcp-server-qdrant/
 project_architecture.png
 .env.backup
 backups/
+graphify-out/

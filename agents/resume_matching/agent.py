@@ -151,7 +151,13 @@ async def _chunk_score_job(
         location=job.location,
         salary=job.salary,
         skills=job.skills,
+        experience=job.experience,
+        min_years_experience=job.min_years_experience,
         description=job.description,
+        responsibilities=job.responsibilities,
+        requirements=job.requirements,
+        benefits=job.benefits,
+        about_company=job.about_company,
         source_platform=job.source_platform,
         poster_type=job.poster_type.value,
         match_score=round(final_score, 4),   # will be updated in Stage 2

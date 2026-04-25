@@ -24,6 +24,7 @@ langchain
 langgraph
 langchain-mistralai
 mistralai
+groq
 qdrant_client
 fastembed
 pydantic
@@ -33,6 +34,7 @@ fastmcp
 
 # Web Scraping & Browser Automation
 playwright
+playwright-stealth
 httpx
 html2text
 
@@ -41,4 +43,3 @@ pdfplumber
 
 # Configuration & Environment
 python-dotenv
-groq

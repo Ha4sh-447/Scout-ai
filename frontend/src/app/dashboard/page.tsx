@@ -8,7 +8,9 @@ import {
   Settings, LogOut, Bell, Plus, 
   ExternalLink, ChevronRight, Filter,
   Layers, CheckCircle, Clock, Mail, Briefcase,
-  Loader2, X, AlertTriangle, Square, Activity, RotateCw
+  Loader2, X, AlertTriangle, Square, Activity, RotateCw,
+  Award, Building2, Sparkles, DollarSign, Target, User,
+  Terminal, Copy
 } from "lucide-react";
 import { fetchJobs, fetchSettings, triggerPipeline, scrapeLinks, cancelPipeline, updateSettings, fetchRuns, uploadResume, saveSearchLinks, getSearchLinks, deleteSearchLink, triggerBrowserAuthentication, getAuthenticationStatus, clearBrowserSession, fetchResumes, updateLinkedinCookie } from "@/lib/api";
 import Link from "next/link";
@@ -44,6 +46,7 @@ export default function Dashboard() {
   const [showSaveLinksPrompt, setShowSaveLinksPrompt] = useState(false);
   const [authStatus, setAuthStatus] = useState<any>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["linkedin", "wellfound", "indeed"]);
   
   const [enableScheduler, setEnableScheduler] = useState(false);
   const [schedulerInterval, setSchedulerInterval] = useState(3);
@@ -259,6 +262,7 @@ export default function Dashboard() {
           <SidebarItem icon={<Activity size={20} />} label="Pipeline History" active={activeTab === "history"} onClick={() => setActiveTab("history")} />
           <SidebarItem icon={<FileText size={20} />} label="My Resumes" active={activeTab === "resumes"} onClick={() => setActiveTab("resumes")} />
           <SidebarItem icon={<Globe size={20} />} label="Saved Search URLs" active={activeTab === "savedlinks"} onClick={() => setActiveTab("savedlinks")} />
+          <SidebarItem icon={<Activity size={20} />} label="Browser Sync" active={activeTab === "authenticator"} onClick={() => setActiveTab("authenticator")} />
           <div className="pt-8 pb-2 px-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Settings</div>
           <SidebarItem icon={<Settings size={20} />} label="Preferences" onClick={handleOpenSettings} />
         </nav>
@@ -288,7 +292,7 @@ export default function Dashboard() {
         <header className="sticky top-0 h-16 border-b border-slate-900 glass z-20 px-8 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-semibold text-white">
-              {activeTab === "jobs" ? "Matched Listings" : activeTab === "history" ? "Pipeline History" : activeTab === "resumes" ? "My Resumes" : activeTab === "savedlinks" ? "Saved Search URLs" : "Overview"}
+              {activeTab === "jobs" ? "Matched Listings" : activeTab === "history" ? "Pipeline History" : activeTab === "resumes" ? "My Resumes" : activeTab === "savedlinks" ? "Saved Search URLs" : activeTab === "authenticator" ? "Browser Sync" : "Overview"}
             </h2>
           </div>
           
@@ -737,7 +741,7 @@ export default function Dashboard() {
                  </button>
                </div>
              </div>
-           ) : activeTab === "savedlinks" ? (
+           ) : activeTab === "authenticator" ? (
              <div className="p-8 space-y-8">
                <div className="glass p-8 rounded-3xl border border-slate-800 space-y-6">
                  <div className="flex items-start justify-between">
@@ -775,63 +779,115 @@ export default function Dashboard() {
                    </div>
                  </div>
 
-                 <div className="grid grid-cols-2 gap-4">
-                   <div className={`p-4 rounded-lg border-2 transition-colors ${authStatus?.has_linkedin ? 'bg-blue-500/10 border-blue-500/30' : 'bg-slate-900/50 border-slate-700'}`}>
-                     <div className="flex items-center gap-2 mb-2">
-                       {authStatus?.has_linkedin ? (
-                         <CheckCircle size={18} className="text-blue-400" />
-                       ) : (
-                         <Square size={18} className="text-slate-500" />
-                       )}
-                       <span className="font-semibold text-white">LinkedIn</span>
-                     </div>
-                     <p className="text-xs text-slate-400">{authStatus?.has_linkedin ? 'Connected' : 'Not connected'}</p>
-                   </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div 
+                      onClick={() => {
+                        setSelectedPlatforms(prev => 
+                          prev.includes("linkedin") ? prev.filter(p => p !== "linkedin") : [...prev, "linkedin"]
+                        );
+                      }}
+                      className={`p-4 rounded-lg border-2 transition-all cursor-pointer hover:border-blue-500/50 ${selectedPlatforms.includes("linkedin") ? 'bg-blue-500/10 border-blue-500/50 shadow-lg shadow-blue-500/5' : 'bg-slate-900/50 border-slate-700'}`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {authStatus?.has_linkedin ? (
+                          <CheckCircle size={18} className="text-blue-400" />
+                        ) : selectedPlatforms.includes("linkedin") ? (
+                          <div className="w-[18px] h-[18px] border-2 border-blue-400 rounded-sm" />
+                        ) : (
+                          <Square size={18} className="text-slate-500" />
+                        )}
+                        <span className="font-semibold text-white">LinkedIn</span>
+                      </div>
+                      <p className="text-xs text-slate-400">{authStatus?.has_linkedin ? 'Connected' : 'Click to select'}</p>
+                    </div>
 
-                   <div className={`p-4 rounded-lg border-2 transition-colors ${authStatus?.has_wellfound ? 'bg-orange-500/10 border-orange-500/30' : 'bg-slate-900/50 border-slate-700'}`}>
-                     <div className="flex items-center gap-2 mb-2">
-                       {authStatus?.has_wellfound ? (
-                         <CheckCircle size={18} className="text-orange-400" />
-                       ) : (
-                         <Square size={18} className="text-slate-500" />
-                       )}
-                       <span className="font-semibold text-white">Wellfound</span>
-                     </div>
-                     <p className="text-xs text-slate-400">{authStatus?.has_wellfound ? 'Connected' : 'Not connected'}</p>
-                   </div>
-                 </div>
+                    <div 
+                      onClick={() => {
+                        setSelectedPlatforms(prev => 
+                          prev.includes("wellfound") ? prev.filter(p => p !== "wellfound") : [...prev, "wellfound"]
+                        );
+                      }}
+                      className={`p-4 rounded-lg border-2 transition-all cursor-pointer hover:border-orange-500/50 ${selectedPlatforms.includes("wellfound") ? 'bg-orange-500/10 border-orange-500/30 shadow-lg shadow-orange-500/5' : 'bg-slate-900/50 border-slate-700'}`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {authStatus?.has_wellfound ? (
+                          <CheckCircle size={18} className="text-orange-400" />
+                        ) : selectedPlatforms.includes("wellfound") ? (
+                          <div className="w-[18px] h-[18px] border-2 border-orange-400 rounded-sm" />
+                        ) : (
+                          <Square size={18} className="text-slate-500" />
+                        )}
+                        <span className="font-semibold text-white">Wellfound</span>
+                      </div>
+                      <p className="text-xs text-slate-400">{authStatus?.has_wellfound ? 'Connected' : 'Click to select'}</p>
+                    </div>
 
-                 <div className="space-y-3">
-                   <button
-                     onClick={async () => {
-                       const token = (session as any)?.user?.accessToken || "";
-                       try {
-                         setIsAuthenticating(true);
-                         const result = await triggerBrowserAuthentication(token);
-                         alert(result.message + "\n\n" + result.instructions.join("\n"));
-                       } catch (error) {
-                         alert("Failed to start authentication: " + (error as Error).message);
-                       } finally {
-                         setIsAuthenticating(false);
-                         setTimeout(async () => {
-                           const token = (session as any)?.user?.accessToken || "";
-                           try {
-                             const statusData = await getAuthenticationStatus(token);
-                             if (statusData?.authenticated) {
-                               setAuthStatus(statusData);
-                               alert("✓ Browser session saved successfully!");
-                             }
-                           } catch (err) {
-                             console.error("Failed to refresh auth status:", err);
-                           }
-                         }, 3000);
-                       }
-                     }}
-                     disabled={isAuthenticating}
-                     className="w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 disabled:opacity-50 text-white font-semibold rounded-xl transition-all"
-                   >
-                     {isAuthenticating ? "Opening Browser..." : "Authenticate LinkedIn & Wellfound"}
-                   </button>
+                    <div 
+                      onClick={() => {
+                        setSelectedPlatforms(prev => 
+                          prev.includes("indeed") ? prev.filter(p => p !== "indeed") : [...prev, "indeed"]
+                        );
+                      }}
+                      className={`p-4 rounded-lg border-2 transition-all cursor-pointer hover:border-blue-300/50 ${selectedPlatforms.includes("indeed") ? 'bg-blue-300/10 border-blue-300/30 shadow-lg shadow-blue-300/5' : 'bg-slate-900/50 border-slate-700'}`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {authStatus?.has_indeed ? (
+                          <CheckCircle size={18} className="text-blue-300" />
+                        ) : selectedPlatforms.includes("indeed") ? (
+                          <div className="w-[18px] h-[18px] border-2 border-blue-300 rounded-sm" />
+                        ) : (
+                          <Square size={18} className="text-slate-500" />
+                        )}
+                        <span className="font-semibold text-white">Indeed</span>
+                      </div>
+                      <p className="text-xs text-slate-400">{authStatus?.has_indeed ? 'Connected' : 'Click to select'}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {selectedPlatforms.length > 0 ? (
+                      <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 shadow-inner">
+                        <div className="flex items-center justify-between mb-3">
+                           <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                             <Terminal size={16} className="text-emerald-400" /> Run this locally
+                           </h4>
+                           <span className="text-xs text-slate-500">From project root</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <code className="flex-1 bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-emerald-300 font-mono overflow-x-auto whitespace-nowrap">
+                            python scripts/auth_helper.py --platforms {selectedPlatforms.join(" ")} --user-id {(session as any)?.user?.id || "your-user-id"}
+                          </code>
+                          <button
+                            onClick={() => {
+                              const command = `python scripts/auth_helper.py --platforms ${selectedPlatforms.join(" ")} --user-id ${(session as any)?.user?.id || "your-user-id"}`;
+                              navigator.clipboard.writeText(command);
+                              const btn = document.getElementById('copy-cmd-btn');
+                              if (btn) {
+                                const orig = btn.innerHTML;
+                                btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-400"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+                                setTimeout(() => btn.innerHTML = orig, 2000);
+                              }
+                            }}
+                            id="copy-cmd-btn"
+                            className="bg-slate-800 hover:bg-slate-700 text-white p-3 rounded-lg border border-slate-700 transition-colors flex items-center justify-center min-w-[44px]"
+                            title="Copy command"
+                          >
+                            <Copy size={16} />
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-3 flex items-start gap-2">
+                          <span className="text-blue-400">ℹ️</span>
+                          Because the app runs in Docker, the browser window must be opened locally on your machine. Paste this command in your terminal, log in, and then click Refresh above.
+                        </p>
+                      </div>
+                    ) : (
+                      <button
+                        disabled
+                        className="w-full px-6 py-3 bg-slate-800 text-slate-500 font-semibold rounded-xl border border-slate-700 cursor-not-allowed"
+                      >
+                        Select platforms to generate command
+                      </button>
+                    )}
 
                    {authStatus?.authenticated && (
                      <button
@@ -845,23 +901,19 @@ export default function Dashboard() {
                            alert("Failed to clear session: " + (error as Error).message);
                          }
                        }}
-                       className="w-full px-6 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 font-semibold rounded-xl border border-red-500/30 transition-colors"
+                       className="w-full px-6 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm font-semibold rounded-xl border border-red-500/20 transition-colors"
                      >
                        Clear Saved Session
                      </button>
                    )}
                  </div>
-
-                 <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
-                   <p className="text-sm text-blue-300">
-                     ℹ️ A browser window will open when you click authenticate. Log in to LinkedIn and/or Wellfound. When done, close the browser window. Click the "Refresh" button above to check if the session was saved successfully.
-                   </p>
-                 </div>
                </div>
-
-               <div className="glass p-8 rounded-3xl border border-slate-800 space-y-6">
-                 <div>
-                   <h3 className="text-xl font-bold text-white mb-2">Add Search URLs</h3>
+              </div>
+            ) : activeTab === "savedlinks" ? (
+              <div className="p-8 space-y-8">
+                <div className="glass p-8 rounded-3xl border border-slate-800 space-y-6">
+                  <div>
+                    <h3 className="text-xl font-bold text-white mb-2">Add Search URLs</h3>
                    <p className="text-slate-400 text-sm">Paste job search URLs from any platform. LinkedIn/Wellfound links will use your authenticated session for personalized results.</p>
                  </div>
                  
@@ -969,6 +1021,11 @@ export default function Dashboard() {
                         time={new Date(job.created_at).toLocaleDateString()}
                         url={job.source_url}
                         description={job.description}
+                        experience={job.experience}
+                        aboutCompany={job.about_company}
+                        responsibilities={job.responsibilities}
+                        requirements={job.requirements}
+                        benefits={job.benefits}
                         emailDraft={job.outreach_email_draft}
                         linkedinDraft={job.outreach_linkedin_draft}
                       />
@@ -1093,23 +1150,6 @@ export default function Dashboard() {
                       />
                    </div>
 
-                   <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mt-6">
-                      <label className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2 mb-2">
-                         Personalized LinkedIn Session (li_at cookie)
-                         {authStatus?.authenticated && <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-md text-[10px]">Session Active</span>}
-                      </label>
-                      <p className="text-[10px] text-blue-300 mb-3 block">
-                         To scrape LinkedIn safely, log into LinkedIn on your browser, right-click &rarr; Inspect &rarr; Application &rarr; Cookies. Copy the value of the <strong className="text-white">li_at</strong> cookie and paste it below.
-                      </p>
-                      <input 
-                        type="password" 
-                        className="w-full bg-slate-900/50 border border-slate-800 rounded-xl p-3 text-sm text-blue-100 focus:border-blue-500 focus:outline-none transition-colors"
-                        placeholder={authStatus?.authenticated ? "•••••••••••••••• (Leave blank to keep current)" : "AQEDAS..."}
-                        value={liAtCookie}
-                        onChange={(e) => setLiAtCookie(e.target.value)}
-                      />
-                   </div>
-
                    <div className="pt-4 flex justify-end gap-4">
                       <button type="button" onClick={() => setIsSettingsOpen(false)} className="px-6 py-2 text-sm font-bold text-slate-400 hover:text-white transition-colors">Cancel</button>
                       <button type="submit" className="px-8 py-2 bg-emerald-500 text-black font-black rounded-xl text-sm hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/10">
@@ -1227,14 +1267,14 @@ function StatCard({ label, value, icon }: { label: string, value: string, icon: 
   );
 }
 
-function JobCard({ id, title, company, score, location, skills, time, url, platform, salary, description, emailDraft, linkedinDraft }: any) {
+function JobCard({ id, title, company, score, location, skills, time, url, platform, salary, description, experience, aboutCompany, responsibilities, requirements, benefits, emailDraft, linkedinDraft }: any) {
   const [showDetails, setShowDetails] = useState(false);
   
   const getPlatformColor = (platform: string) => {
     const p = platform?.toLowerCase() || "";
     if (p.includes("linkedin")) return "bg-blue-500/10 text-blue-400 border-blue-500/20";
     if (p.includes("indeed")) return "bg-purple-500/10 text-purple-400 border-purple-500/20";
-    if (p.includes("reddit")) return "bg-orange-500/10 text-orange-400 border-orange-500/20";
+    if (p.includes("wellfound")) return "bg-orange-500/10 text-orange-400 border-orange-500/20";
     return "bg-slate-500/10 text-slate-400 border-slate-500/20";
   };
 
@@ -1251,6 +1291,11 @@ function JobCard({ id, title, company, score, location, skills, time, url, platf
                 <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md border ${getPlatformColor(platform)}`}>
                   {platform || "Unknown"}
                 </span>
+                {experience && (
+                  <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md border border-slate-700 bg-slate-800 text-slate-400">
+                    {experience}
+                  </span>
+                )}
               </div>
               <h3 className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors line-clamp-2 mb-1">{title}</h3>
               <p className="text-sm text-slate-400">{company}</p>
@@ -1271,7 +1316,7 @@ function JobCard({ id, title, company, score, location, skills, time, url, platf
             </div>
             <div className="flex items-center justify-between text-xs">
               <span className="text-slate-500 flex items-center gap-1"><Clock size={12} /> {time}</span>
-              <span className="text-slate-600">Match Score: {score}%</span>
+              <span className="text-slate-600 font-medium">Match Level: {score > 85 ? 'High' : score > 70 ? 'Moderate' : 'Low'}</span>
             </div>
          </div>
 
@@ -1290,7 +1335,7 @@ function JobCard({ id, title, company, score, location, skills, time, url, platf
               }}
               className="flex-1 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-colors text-slate-300 border border-slate-700"
             >
-              <Search size={14} /> Details
+              <Search size={14} /> View Analysis
             </button>
             <Link 
               href={url || "#"} 
@@ -1298,154 +1343,261 @@ function JobCard({ id, title, company, score, location, skills, time, url, platf
               onClick={(e) => e.stopPropagation()}
               className="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-sm font-bold rounded-lg text-black flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20"
             >
-              <ExternalLink size={14} /> Apply 
+              <ExternalLink size={14} /> Apply Now
             </Link>
          </div>
       </motion.div>
 
       <AnimatePresence>
         {showDetails && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setShowDetails(false)}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowDetails(false)}>
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.9, y: 20, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.9, y: 20, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-[#0f0f12] border border-slate-800 w-full max-w-3xl rounded-3xl overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto"
+              className="bg-[#0f0f12] border border-slate-800 w-full max-w-5xl rounded-[2.5rem] overflow-hidden shadow-2xl max-h-[90vh] flex flex-col"
             >
-              <div className="sticky top-0 p-6 border-b border-slate-800 bg-zinc-900/50 flex items-center justify-between">
-                <div>
-                  <h3 className="text-2xl font-bold text-white">{title}</h3>
-                  <p className="text-slate-400 mt-1">{company}</p>
+              <div className="p-8 border-b border-slate-800 bg-zinc-900/30 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-6">
+                  <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl flex items-center justify-center text-black shadow-lg shadow-emerald-500/20">
+                    <Briefcase size={32} />
+                  </div>
+                  <div>
+                    <h3 className="text-3xl font-black text-white tracking-tight leading-tight">{title}</h3>
+                    <div className="flex items-center gap-3 mt-1.5">
+                      <span className="text-emerald-400 font-bold text-lg">{company}</span>
+                      <span className="w-1 h-1 bg-slate-700 rounded-full" />
+                      <span className="text-slate-500 flex items-center gap-1.5 text-sm font-medium">
+                        <MapPin size={14} /> {location}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <button onClick={() => setShowDetails(false)} className="text-slate-500 hover:text-white transition">
+                <button 
+                  onClick={() => setShowDetails(false)} 
+                  className="w-12 h-12 flex items-center justify-center rounded-2xl bg-slate-900 text-slate-500 hover:text-white hover:bg-slate-800 transition-all border border-slate-800"
+                >
                   <X size={24} />
                 </button>
               </div>
 
-              <div className="p-8 space-y-6">
-                <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Location</label>
-                    <p className="text-white text-lg mt-2">{location}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Platform</label>
-                    <div className="mt-2">
-                      <span className={`px-3 py-1 text-sm font-bold uppercase tracking-wider rounded-lg border inline-block ${getPlatformColor(platform)}`}>
-                        {platform || "Unknown"}
+              <div className="flex-1 overflow-y-auto p-10 space-y-12 custom-scrollbar">
+                {/* Meta Highlights */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-slate-900/50 rounded-3xl p-5 border border-slate-800/50 hover:border-emerald-500/30 transition-colors">
+                    <div className="flex items-center gap-2 text-slate-500 font-bold text-[10px] uppercase tracking-widest mb-2">
+                      <Target size={14} className="text-emerald-500" /> Match Quality
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-black text-white">{score}%</span>
+                      <span className={`text-[10px] font-black uppercase ${score > 85 ? 'text-emerald-500' : score > 70 ? 'text-blue-500' : 'text-amber-500'}`}>
+                         {score > 85 ? 'High' : score > 70 ? 'Moderate' : 'Review'}
                       </span>
                     </div>
                   </div>
-                  <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Match Score</label>
-                    <p className="text-emerald-400 text-lg font-bold mt-2">{score}%</p>
-                  </div>
-                  {salary && (
-                    <div>
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Salary</label>
-                      <p className="text-white text-lg mt-2">{salary}</p>
+                  <div className="bg-slate-900/50 rounded-3xl p-5 border border-slate-800/50 hover:border-blue-500/30 transition-colors">
+                    <div className="flex items-center gap-2 text-slate-500 font-bold text-[10px] uppercase tracking-widest mb-2">
+                      <Award size={14} className="text-blue-500" /> Experience
                     </div>
-                  )}
+                    <div className="text-xl font-bold text-white truncate">{experience || "Not specified"}</div>
+                  </div>
+                  <div className="bg-slate-900/50 rounded-3xl p-5 border border-slate-800/50 hover:border-amber-500/30 transition-colors">
+                    <div className="flex items-center gap-2 text-slate-500 font-bold text-[10px] uppercase tracking-widest mb-2">
+                      <DollarSign size={14} className="text-amber-500" /> Comp Range
+                    </div>
+                    <div className="text-xl font-bold text-white truncate">{salary || "Undisclosed"}</div>
+                  </div>
+                  <div className="bg-slate-900/50 rounded-3xl p-5 border border-slate-800/50 hover:border-purple-500/30 transition-colors">
+                    <div className="flex items-center gap-2 text-slate-500 font-bold text-[10px] uppercase tracking-widest mb-2">
+                      <Globe size={14} className="text-purple-500" /> Platform
+                    </div>
+                    <div className="text-xl font-bold text-white uppercase tracking-tight">{platform || "Generic"}</div>
+                  </div>
                 </div>
 
-                {description && (
-                  <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">Description</label>
-                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-slate-300 text-sm leading-relaxed max-h-48 overflow-y-auto">
-                      {description}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+                  <div className="lg:col-span-2 space-y-12">
+                    {/* Role Description */}
+                    <section>
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="p-2 bg-emerald-500/10 rounded-xl">
+                          <Sparkles size={20} className="text-emerald-500" />
+                        </div>
+                        <h4 className="text-sm font-black text-white uppercase tracking-[0.2em]">Role Overview</h4>
+                      </div>
+                      <div className="bg-slate-900/30 border border-slate-800/50 rounded-[2.5rem] p-8 text-slate-300 leading-relaxed text-base italic font-medium shadow-inner">
+                        "{description}"
+                      </div>
+                    </section>
+
+                    {/* Responsibilities (What You'll Do) */}
+                    {responsibilities && (
+                      <section>
+                        <div className="flex items-center gap-3 mb-6">
+                           <div className="p-2 bg-blue-500/10 rounded-xl">
+                             <Activity size={20} className="text-blue-500" />
+                           </div>
+                           <h4 className="text-sm font-black text-white uppercase tracking-[0.2em]">What You'll Do</h4>
+                        </div>
+                        <div className="bg-slate-900/20 border border-slate-800/30 rounded-[2rem] p-8 text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
+                          {responsibilities}
+                        </div>
+                      </section>
+                    )}
+
+                    {/* Requirements (What You'll Need) */}
+                    {requirements && (
+                      <section>
+                        <div className="flex items-center gap-3 mb-6">
+                           <div className="p-2 bg-amber-500/10 rounded-xl">
+                             <CheckCircle size={20} className="text-amber-500" />
+                           </div>
+                           <h4 className="text-sm font-black text-white uppercase tracking-[0.2em]">What You'll Need</h4>
+                        </div>
+                        <div className="bg-slate-900/20 border border-slate-800/30 rounded-[2rem] p-8 text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
+                          {requirements}
+                        </div>
+                      </section>
+                    )}
+
+                    {/* Benefits (What You can Expect) */}
+                    {benefits && (
+                      <section>
+                        <div className="flex items-center gap-3 mb-6">
+                           <div className="p-2 bg-purple-500/10 rounded-xl">
+                             <Plus size={20} className="text-purple-500" />
+                           </div>
+                           <h4 className="text-sm font-black text-white uppercase tracking-[0.2em]">What You can Expect</h4>
+                        </div>
+                        <div className="bg-slate-900/20 border border-slate-800/30 rounded-[2rem] p-8 text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
+                          {benefits}
+                        </div>
+                      </section>
+                    )}
+
+                    {/* Outreach Drafts */}
+                    <div className="grid grid-cols-1 gap-8">
+                      {emailDraft && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <Mail size={20} className="text-blue-400" />
+                              <h4 className="text-sm font-black text-white uppercase tracking-[0.2em]">Email Outreach</h4>
+                            </div>
+                            <button 
+                              onClick={() => {
+                                navigator.clipboard.writeText(emailDraft);
+                                const btn = document.getElementById(`copy-email-${id}`);
+                                if (btn) {
+                                  const originalText = btn.innerHTML;
+                                  btn.innerHTML = "Copied!";
+                                  setTimeout(() => btn.innerHTML = originalText, 2000);
+                                }
+                              }}
+                              id={`copy-email-${id}`}
+                              className="px-6 py-2 bg-blue-500/10 text-blue-400 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-blue-500 hover:text-white transition-all shadow-lg shadow-blue-500/10"
+                            >
+                              Copy Draft
+                            </button>
+                          </div>
+                          <div className="bg-slate-950 border border-slate-800 rounded-[2rem] p-8 text-slate-400 text-xs font-mono leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto custom-scrollbar shadow-inner">
+                            {emailDraft}
+                          </div>
+                        </div>
+                      )}
+
+                      {linkedinDraft && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <Briefcase size={20} className="text-emerald-400" />
+                              <h4 className="text-sm font-black text-white uppercase tracking-[0.2em]">LinkedIn Direct</h4>
+                            </div>
+                            <button 
+                              onClick={() => {
+                                navigator.clipboard.writeText(linkedinDraft);
+                                const btn = document.getElementById(`copy-li-${id}`);
+                                if (btn) {
+                                  const originalText = btn.innerHTML;
+                                  btn.innerHTML = "Copied!";
+                                  setTimeout(() => btn.innerHTML = originalText, 2000);
+                                }
+                              }}
+                              id={`copy-li-${id}`}
+                              className="px-6 py-2 bg-emerald-500/10 text-emerald-400 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 hover:text-black transition-all shadow-lg shadow-emerald-500/10"
+                            >
+                              Copy Draft
+                            </button>
+                          </div>
+                          <div className="bg-slate-950 border border-slate-800 rounded-[2rem] p-8 text-slate-400 text-xs font-mono leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto custom-scrollbar shadow-inner">
+                            {linkedinDraft}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {emailDraft && (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                          <Mail size={14} /> Email Draft
-                        </label>
-                        <button 
-                          onClick={() => {
-                            navigator.clipboard.writeText(emailDraft);
-                            const btn = document.getElementById(`copy-email-${id}`);
-                            if (btn) {
-                              const originalText = btn.innerHTML;
-                              btn.innerHTML = "Copied!";
-                              btn.classList.add("text-emerald-400");
-                              setTimeout(() => {
-                                btn.innerHTML = originalText;
-                                btn.classList.remove("text-emerald-400");
-                              }, 2000);
-                            }
-                          }}
-                          id={`copy-email-${id}`}
-                          className="text-[10px] font-bold text-slate-400 hover:text-white transition-colors uppercase tracking-widest"
-                        >
-                          Copy
-                        </button>
+                  <div className="space-y-12">
+                    {/* Skills Breakdown */}
+                    <section>
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="p-2 bg-emerald-500/10 rounded-xl">
+                          <Target size={20} className="text-emerald-500" />
+                        </div>
+                        <h4 className="text-sm font-black text-white uppercase tracking-[0.2em]">Core Skills</h4>
                       </div>
-                      <textarea
-                        readOnly
-                        value={emailDraft}
-                        className="w-full h-48 bg-slate-900/50 border border-slate-800 rounded-2xl p-4 text-slate-300 text-sm font-mono leading-relaxed resize-none focus:outline-none focus:border-emerald-500/50"
-                      />
-                    </div>
-                  )}
-                  {linkedinDraft && (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                          <Briefcase size={14} /> LinkedIn Draft
-                        </label>
-                        <button 
-                          onClick={() => {
-                            navigator.clipboard.writeText(linkedinDraft);
-                            const btn = document.getElementById(`copy-li-${id}`);
-                            if (btn) {
-                              const originalText = btn.innerHTML;
-                              btn.innerHTML = "Copied!";
-                              btn.classList.add("text-emerald-400");
-                              setTimeout(() => {
-                                btn.innerHTML = originalText;
-                                btn.classList.remove("text-emerald-400");
-                              }, 2000);
-                            }
-                          }}
-                          id={`copy-li-${id}`}
-                          className="text-[10px] font-bold text-slate-400 hover:text-white transition-colors uppercase tracking-widest"
-                        >
-                          Copy
-                        </button>
+                      <div className="flex flex-wrap gap-2.5">
+                        {(skills || []).map((s: string, idx: number) => (
+                          <span key={idx} className="px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-300 text-[10px] font-black uppercase hover:border-emerald-500/50 transition-colors shadow-sm tracking-wider">
+                            {s}
+                          </span>
+                        ))}
                       </div>
-                      <textarea
-                        readOnly
-                        value={linkedinDraft}
-                        className="w-full h-48 bg-slate-900/50 border border-slate-800 rounded-2xl p-4 text-slate-300 text-sm font-mono leading-relaxed resize-none focus:outline-none focus:border-emerald-500/50"
-                      />
+                    </section>
+
+                    {/* About Company */}
+                    {aboutCompany && (
+                      <section>
+                        <div className="flex items-center gap-3 mb-6">
+                           <div className="p-2 bg-blue-500/10 rounded-xl">
+                             <Building2 size={20} className="text-blue-500" />
+                           </div>
+                           <h4 className="text-sm font-black text-white uppercase tracking-[0.2em]">Company Insights</h4>
+                        </div>
+                        <div className="bg-blue-500/5 border border-blue-500/10 rounded-[2rem] p-8 text-slate-400 text-sm leading-relaxed font-medium shadow-inner">
+                          {aboutCompany}
+                        </div>
+                      </section>
+                    )}
+
+                    {/* Stats */}
+                    <div className="bg-gradient-to-br from-slate-900 to-[#0a0a0c] rounded-[2.5rem] border border-slate-800 p-8">
+                       <div className="flex items-center justify-between mb-5">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Scanned on</span>
+                          <span className="text-xs text-white font-black">{time}</span>
+                       </div>
+                       <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Job Fingerprint</span>
+                          <span className="text-[10px] text-slate-600 font-mono italic tracking-tighter">{id.substring(0, 12)}...</span>
+                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
 
-                {!emailDraft && !linkedinDraft && (
-                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-amber-400 text-sm flex items-center gap-2">
-                    <AlertTriangle size={16} /> No outreach draft generated yet. Please re-match this job with your resume.
-                  </div>
-                )}
-
-                <div className="pt-4 flex gap-3">
+                <div className="pt-10 flex gap-5 shrink-0">
                   <Link
                     href={url || "#"}
                     target="_blank"
-                    className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20"
+                    className="flex-1 h-20 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black font-black rounded-[1.5rem] flex items-center justify-center gap-4 transition-all shadow-xl shadow-emerald-500/30 text-xl uppercase tracking-[0.1em]"
                   >
-                    <ExternalLink size={16} /> View on Platform
+                    <ExternalLink size={24} /> Application Portal
                   </Link>
                   <button
                     onClick={() => setShowDetails(false)}
-                    className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-colors"
+                    className="h-20 px-12 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-[1.5rem] transition-all border border-slate-800 uppercase tracking-widest text-sm"
                   >
-                    Close
+                    Dismiss
                   </button>
                 </div>
               </div>

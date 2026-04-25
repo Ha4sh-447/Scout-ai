@@ -32,7 +32,10 @@ For EACH job, return a JSON object with EXACTLY these fields:
   "experience": "required experience (e.g. '2+ years') or null",
   "min_years_experience": <integer or null>,
   "skills": ["skill1", "skill2"],
-  "description": "key responsibilities — 2-3 sentences max",
+  "description": "2-3 sentence overview of the role",
+  "responsibilities": "bullet points or paragraph of what you'll do",
+  "requirements": "bullet points or paragraph of qualifications/needs",
+  "benefits": "bullet points or paragraph of what to expect/benefits",
   "about_company": "1-2 sentence summary or null",
   "job_type": ["remote", "full_time"],
   "poster_type": "direct_hire" | "agency_recruiter" | "unknown",
@@ -40,10 +43,12 @@ For EACH job, return a JSON object with EXACTLY these fields:
 }
 
 Rules:
+- responsibilities: highlight high-level tasks and daily activities
+- requirements: include specific tools, years, or education mentioned
+- benefits/expectations: include perks, company culture, or role perks
 - skills: technical skills only; normalise variants (ReactJS→React, Node.js→Node)
 - job_type array: values from {remote, on_site, hybrid, full_time, part_time, contract, internship, unknown}
-- poster_type: agency_recruiter if posted by a staffing firm
-- description: prioritise responsibilities over marketing fluff
+- description: a concise hook for the role
 - Return a JSON ARRAY of objects, one per job, in the same index order
 - NO markdown, NO explanation — raw JSON array only\
 """
@@ -57,14 +62,17 @@ class _RecruiterSchema(BaseModel):
 
 class _ParsedJobSchema(BaseModel):
     index:               int
-    title:               str
-    company:             str
+    title:               str = "Unknown Title"
+    company:             str = "Unknown Company"
     location:            str = "Unknown"
     salary:              Optional[str] = None
     experience:          Optional[str] = None
     min_years_experience: Optional[int] = None
     skills:              list[str] = []
     description:         str = ""
+    responsibilities:    Optional[str] = None
+    requirements:        Optional[str] = None
+    benefits:            Optional[str] = None
     about_company:       Optional[str] = None
     job_type:            list[str] = ["unknown"]
     poster_type:         str = "unknown"
@@ -172,7 +180,9 @@ async def _parse_chunk(
                     if job:
                         parsed_out.append(job)
                 except Exception as ve:
-                    errors.append(f"Schema validation error: {ve}")
+                    idx = item.get("index") if isinstance(item, dict) else None
+                    url = raw_jobs[idx].source_url if isinstance(idx, int) and 0 <= idx < len(raw_jobs) else "unknown_url"
+                    errors.append(f"Schema validation error ({url}): {ve}")
 
             return errors
 
@@ -200,6 +210,9 @@ async def _parse_chunk(
 def _schema_to_job(schema: _ParsedJobSchema, raw) -> Job | None:
     """Convert validated schema + original raw data → Job model."""
     try:
+        # Fallbacks for sparse listing-card text where LLM may miss fields.
+        fallback_title, fallback_company = _extract_title_company_from_raw(raw.raw_text or "")
+
         try:
             poster_type = PosterType(schema.poster_type)
         except ValueError:
@@ -220,11 +233,15 @@ def _schema_to_job(schema: _ParsedJobSchema, raw) -> Job | None:
         if schema.recruiter:
             recruiter = RecruiterInfo(**schema.recruiter.model_dump())
 
-        company     = sanitise_company_name(schema.company)
-        description = sanitise_job_description(schema.description or "")
+        resolved_title = (schema.title or "").strip() or fallback_title or "Unknown Title"
+        resolved_company = (schema.company or "").strip() or fallback_company or "Unknown Company"
+        resolved_description = (schema.description or "").strip() or (raw.raw_text or "")[:500]
+
+        company     = sanitise_company_name(resolved_company)
+        description = sanitise_job_description(resolved_description)
 
         return Job(
-            title                = schema.title or "Unknown Title",
+            title                = resolved_title,
             company              = company,
             location             = schema.location,
             salary               = getattr(raw, "salary", None) or schema.salary,
@@ -234,6 +251,9 @@ def _schema_to_job(schema: _ParsedJobSchema, raw) -> Job | None:
             source_url           = raw.source_url,
             source_platform      = raw.source_platform,
             description          = description,
+            responsibilities     = schema.responsibilities,
+            requirements         = schema.requirements,
+            benefits             = schema.benefits,
             about_company        = schema.about_company,
             job_type             = job_type_list,
             poster_type          = poster_type,
@@ -248,6 +268,26 @@ def _schema_to_job(schema: _ParsedJobSchema, raw) -> Job | None:
     except Exception as e:
         logger.warning("[job_parser] Failed to build Job object: %s", e)
         return None
+
+
+def _extract_title_company_from_raw(raw_text: str) -> tuple[str | None, str | None]:
+    """Best-effort extraction from listing-card style text."""
+    if not raw_text:
+        return None, None
+
+    lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
+    if not lines:
+        return None, None
+
+    title = lines[0] if lines else None
+    company = lines[1] if len(lines) > 1 else None
+
+    if title and len(title) < 3:
+        title = None
+    if company and len(company) < 2:
+        company = None
+
+    return title, company
 
 
 def _strip_markdown_fences(text: str) -> str:

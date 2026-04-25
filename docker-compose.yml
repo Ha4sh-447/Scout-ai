@@ -30,6 +30,7 @@ services:
       EMAIL_PASSWORD: ${EMAIL_PASSWORD}
       EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST}
       EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT}
+      ALLOW_ALEMBIC_STAMP_REPAIR: "true"
     restart: unless-stopped
     volumes:
       - ./data:/app/data

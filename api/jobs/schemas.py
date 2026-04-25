@@ -18,7 +18,13 @@ class JobResultResponse(BaseModel):
     skills: List[str] = []
     top_matching_skills: List[str] = []
     salary: Optional[str] = None
+    experience: Optional[str] = None
+    min_years_experience: Optional[int] = None
     description: Optional[str] = None
+    responsibilities: Optional[str] = None
+    requirements: Optional[str] = None
+    benefits: Optional[str] = None
+    about_company: Optional[str] = None
     poster_type: str
     outreach_email_draft: Optional[str] = None
     outreach_linkedin_draft: Optional[str] = None

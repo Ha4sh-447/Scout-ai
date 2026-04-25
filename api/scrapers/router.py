@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from api.deps import get_current_user
 from db.models import User, Link, UserSettings
-from api.scrapers.schemas import ScrapeRequest, ScrapeResponse, SaveSearchLinksRequest, SaveSearchLinksResponse, SavedLinkResponse
+from api.scrapers.schemas import ScrapeRequest, ScrapeResponse, SaveSearchLinksRequest, SaveSearchLinksResponse, SavedLinkResponse, AuthenticateRequest
 from scrapers.page_loader import load_job_pages, detect_platform
 from tools.browser.browser_manager import BrowserManager
 from db.base import get_db
@@ -19,6 +19,7 @@ router = APIRouter(prefix="/scrapers", tags=["scrapers"])
 
 @router.post("/authenticate")
 async def trigger_browser_authentication(
+    request: AuthenticateRequest = AuthenticateRequest(),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -36,28 +37,11 @@ async def trigger_browser_authentication(
     Only needs to be done ONCE per user - subsequent calls reuse the saved session.
     """
     try:
-        # Check if user already has a saved session
-        result = await db.execute(
-            select(UserSettings).where(UserSettings.user_id == current_user.id)
-        )
-        settings = result.scalar_one_or_none()
-        
-        if settings and settings.browser_session:
-            logger.info(f"[authenticate] User {current_user.id} already has saved session, skipping auth")
-            return {
-                "message": "Browser session already saved!",
-                "authenticated": True,
-                "status": "Session already exists for this user",
-                "instructions": [
-                    "Your browser session is already saved and will be automatically used for:",
-                    "• LinkedIn job scraping",
-                    "• Wellfound job scraping",
-                    "The saved session will be reused for all future job searches.",
-                    "You don't need to authenticate again!"
-                ]
-            }
-        
-        # Session doesn't exist, trigger authentication
+        # Validate platforms
+        if not all(p in ["linkedin", "wellfound", "indeed"] for p in request.platforms):
+            raise HTTPException(status_code=400, detail="Invalid platform(s) requested")
+
+        # Session may exist, but we allow re-triggering to "Sync" or update
         script_path = os.path.join(os.getcwd(), "scripts", "auth_helper.py")
         
         # Call auth_helper with user_id for database storage
@@ -68,7 +52,7 @@ async def trigger_browser_authentication(
         os.makedirs("data", exist_ok=True)
         with open(log_file_path, "w") as logfile:
             subprocess.Popen(
-                [sys.executable, script_path, "--platforms", "linkedin", "wellfound", "--user-id", current_user.id],
+                [sys.executable, script_path, "--platforms", *request.platforms, "--user-id", current_user.id],
                 env=env,
                 stdout=logfile,
                 stderr=subprocess.STDOUT
@@ -81,12 +65,12 @@ async def trigger_browser_authentication(
             "authenticated": False,
             "status": "Authentication in progress",
             "instructions": [
-                "1. A browser window has opened with LinkedIn and Wellfound login pages",
+                "1. A browser window has opened with login pages for the selected platforms",
                 "2. Log into the platforms you want to use",
                 "3. The script will auto-detect successful login and save your session",
                 "4. The browser will close automatically after authentication",
                 "5. Check back here shortly - you'll see the status updated",
-                "💡 Only log into platforms you actually want to use - others won't be marked as authenticated",
+                "💡 For Indeed, once you reach the job search or account page, it will be detected.",
                 "📌 This only needs to be done ONCE. Future runs will reuse this session."
             ]
         }
@@ -120,6 +104,7 @@ async def get_authentication_status(
     session = settings.browser_session
     has_linkedin = False
     has_wellfound = False
+    has_indeed = False
     
     if isinstance(session, dict):
         cookies = session.get("cookies", [])
@@ -129,11 +114,14 @@ async def get_authentication_status(
                 has_linkedin = True
             elif "wellfound" in domain.lower():
                 has_wellfound = True
+            elif "indeed" in domain.lower():
+                has_indeed = True
     
     return {
-        "authenticated": has_linkedin or has_wellfound,
+        "authenticated": has_linkedin or has_wellfound or has_indeed,
         "has_linkedin": has_linkedin,
         "has_wellfound": has_wellfound,
+        "has_indeed": has_indeed,
         "message": "Browser session is active",
         "saved_at": settings.updated_at.isoformat() if settings.updated_at else None
     }
@@ -272,8 +260,8 @@ async def save_search_links(
             saved_count += 1
             
             # Track which platforms were saved
-            if platform.lower() in ["linkedin", "wellfound"]:
-                linkedin_wellfound_count += 1
+            if platform.lower() in ["linkedin", "wellfound", "indeed"]:
+                linkedin_wellfound_indeed_count += 1
             else:
                 other_platforms.append(platform.lower() if platform else "generic")
 

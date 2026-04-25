@@ -38,6 +38,10 @@ class MatchedJob(BaseModel):
     salary: Optional[str] = None
     skills: list[str] = []
     experience: Optional[str] = None
+    min_years_experience: Optional[int] = None
+    responsibilities: Optional[str] = None
+    requirements: Optional[str] = None
+    benefits: Optional[str] = None
     about_company: Optional[str] = None
     job_type: list[str] = []
     recruiter: Optional[dict] = None

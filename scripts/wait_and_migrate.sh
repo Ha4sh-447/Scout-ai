@@ -48,11 +48,68 @@ fi
 echo "[STARTUP] Running database migrations..."
 cd /app/db/migrations
 
-if alembic upgrade head; then
+set +e
+ALEMBIC_OUTPUT=$(alembic upgrade head 2>&1)
+ALEMBIC_STATUS=$?
+set -e
+
+echo "$ALEMBIC_OUTPUT"
+
+if [ $ALEMBIC_STATUS -eq 0 ]; then
     echo "[STARTUP] ✓ Migrations completed successfully"
 else
-    echo "[STARTUP] ✗ FAILED: Alembic migrations failed"
-    exit 1
+    if echo "$ALEMBIC_OUTPUT" | grep -q "Can't locate revision identified by"; then
+        if [ "${ALLOW_ALEMBIC_STAMP_REPAIR:-false}" = "true" ]; then
+            HEAD_REV=$(alembic heads | awk 'NR==1{print $1}')
+            if [ -z "$HEAD_REV" ]; then
+                echo "[STARTUP] ✗ FAILED: Could not resolve Alembic head revision"
+                exit 1
+            fi
+
+            echo "[STARTUP] ⚠ Unknown Alembic revision detected in database."
+            echo "[STARTUP] ⚠ Repair enabled: forcing alembic_version to head revision: $HEAD_REV"
+
+            if [ -n "$DATABASE_URL" ]; then
+                PSQL_URL=$(python - <<'PY'
+import os
+
+url = os.environ.get("DATABASE_URL", "")
+url = url.replace("postgresql+asyncpg://", "postgresql://")
+url = url.replace("postgres+asyncpg://", "postgres://")
+print(url)
+PY
+)
+                psql "$PSQL_URL" <<SQL
+CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL);
+TRUNCATE TABLE alembic_version;
+INSERT INTO alembic_version(version_num) VALUES ('$HEAD_REV');
+SQL
+            else
+                if [ -z "$DB_PASSWORD" ]; then
+                    echo "[STARTUP] ✗ FAILED: DB_PASSWORD is required for Alembic repair mode when DATABASE_URL is not set"
+                    exit 1
+                fi
+
+                export PGPASSWORD="$DB_PASSWORD"
+                psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" <<SQL
+CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL);
+TRUNCATE TABLE alembic_version;
+INSERT INTO alembic_version(version_num) VALUES ('$HEAD_REV');
+SQL
+            fi
+
+            alembic upgrade head
+            echo "[STARTUP] ✓ Migrations completed after revision repair"
+        else
+            echo "[STARTUP] ✗ FAILED: Alembic revision in DB is unknown to this codebase"
+            echo "[STARTUP]   Set ALLOW_ALEMBIC_STAMP_REPAIR=true to auto-stamp to current head"
+            echo "[STARTUP]   Or reset volume / manually update alembic_version table"
+            exit 1
+        fi
+    else
+        echo "[STARTUP] ✗ FAILED: Alembic migrations failed"
+        exit 1
+    fi
 fi
 
 cd /app

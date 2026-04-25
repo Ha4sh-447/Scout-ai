@@ -200,6 +200,35 @@ async def check_wellfound_authenticated(page):
         return False
 
 
+async def check_indeed_authenticated(page):
+    """Check if user is authenticated on Indeed."""
+    try:
+        await asyncio.sleep(1)
+        current_url = page.url
+        
+        # Check if we're past the login/auth flow
+        if "/login" not in current_url and "indeed.com" in current_url:
+            # Look for profile icons or logout links
+            try:
+                has_account_nav = await page.query_selector('[data-testid="AccountNav-AccountDropdown"]') is not None
+                has_profile_btn = await page.query_selector('a[href*="/myjobs"], button[aria-label*="Account"]') is not None
+                if has_account_nav or has_profile_btn:
+                    logger.info("Indeed: Found account/profile indicators")
+                    return True
+            except:
+                pass
+            
+            # If we're on a page with jobs and not on login, it's often enough
+            if "/jobs" in current_url:
+                logger.info(f"Indeed job search view detected: {current_url}")
+                return True
+                
+        return False
+    except Exception as e:
+        logger.debug(f"Indeed auth check error: {e}")
+        return False
+
+
 async def run(platforms: list = None, user_id: str = None):
     """
     Launch browser for user to login to job platforms.
@@ -211,7 +240,7 @@ async def run(platforms: list = None, user_id: str = None):
     """
     try:
         if platforms is None:
-            platforms = ["linkedin", "wellfound"]
+            platforms = ["linkedin", "wellfound", "indeed"]
         
         logger.info(f"=== Starting authentication for user {user_id} ===")
         logger.info(f"Platforms: {platforms}")
@@ -226,23 +255,43 @@ async def run(platforms: list = None, user_id: str = None):
             print(f"User ID: {user_id}")
         
         # Check if user already has a saved session
+        existing_session = None
         if user_id:
             print("\n🔍 Checking for existing browser session...")
             logger.info(f"Checking for existing session for user {user_id}")
             existing_session = await get_existing_session(user_id)
             
             if existing_session:
-                print("✓ Browser session already saved for this user!")
-                print("\n" + "-"*60)
-                print("  EXISTING SESSION FOUND")
-                print("-"*60)
-                print("Your browser session is already saved and will be used for:")
-                print("• LinkedIn scraping")
-                print("• Wellfound scraping")
-                print("\nYou don't need to log in again.")
-                print("="*60 + "\n")
-                logger.info("Returning early - existing session found")
-                return True
+                cookies = existing_session.get("cookies", [])
+                has_linkedin = any("linkedin" in c.get("domain", "").lower() for c in cookies)
+                has_wellfound = any("wellfound" in c.get("domain", "").lower() for c in cookies)
+                has_indeed = any("indeed" in c.get("domain", "").lower() for c in cookies)
+                
+                missing_platforms = []
+                if "linkedin" in platforms and not has_linkedin:
+                    missing_platforms.append("linkedin")
+                if "wellfound" in platforms and not has_wellfound:
+                    missing_platforms.append("wellfound")
+                if "indeed" in platforms and not has_indeed:
+                    missing_platforms.append("indeed")
+                
+                if not missing_platforms:
+                    print("✓ Browser session already saved for ALL requested platforms!")
+                    print("\n" + "-"*60)
+                    print("  EXISTING SESSION FULLY MATCHES REQUEST")
+                    print("-"*60)
+                    print("Your browser session is already saved for:")
+                    for p in platforms:
+                        print(f"• {p.title()}")
+                    print("\nYou don't need to log in again. Use 'Clear Saved Session' if you want to force re-authentication.")
+                    print("="*60 + "\n")
+                    logger.info("Returning early - existing session fully covers requested platforms")
+                    return True
+                else:
+                    print(f"ℹ️ Found session, but missing cookies for: {', '.join(missing_platforms).title()}")
+                    # Update platforms to only what is missing, but keep the existing_session
+                    # so we can merge it into the new browser context!
+                    platforms = missing_platforms
         
         print("\n✓ Simply log in to the platforms in the browser tabs")
         print("✓ Authentication will be detected automatically")
@@ -269,20 +318,25 @@ async def run(platforms: list = None, user_id: str = None):
             )
             logger.info("✓ Browser launched successfully")
             
-            context = await browser.new_context(
-                user_agent=(
+            context_args = {
+                "user_agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/120.0.0.0 Safari/537.36"
                 ),
-                viewport={"width": 1280, "height": 800},
-                locale="en-US",
-                timezone_id="UTC",
-                extra_http_headers={
+                "viewport": {"width": 1280, "height": 800},
+                "locale": "en-US",
+                "timezone_id": "UTC",
+                "extra_http_headers": {
                     "Accept-Language": "en-US,en;q=0.9",
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                },
-            )
+                }
+            }
+            if existing_session is not None:
+                context_args["storage_state"] = existing_session
+                logger.info("Injecting existing session state into new browser context")
+            
+            context = await browser.new_context(**context_args)
             logger.info("✓ Browser context created")
             
             pages = {}
@@ -305,6 +359,16 @@ async def run(platforms: list = None, user_id: str = None):
                 pages["wellfound"] = page
                 authenticated["wellfound"] = False
                 logger.info("✓ Wellfound page loaded")
+
+            if "indeed" in platforms:
+                print("📖 Opening Indeed login page...")
+                logger.info("Opening Indeed login page")
+                page = await context.new_page()
+                # Target the main Indian domain to match scraper default
+                await page.goto("https://in.indeed.com/", wait_until="load")
+                pages["indeed"] = page
+                authenticated["indeed"] = False
+                logger.info("✓ Indeed page loaded")
 
             print("\n" + "-"*60)
             print("  Waiting for login... (auto-detecting)")
@@ -329,6 +393,13 @@ async def run(platforms: list = None, user_id: str = None):
                         authenticated["wellfound"] = True
                         print("✅ Wellfound: Successfully authenticated!")
                         logger.info("Wellfound authentication detected")
+
+                # Check Indeed
+                if "indeed" in pages and not authenticated["indeed"]:
+                    if await check_indeed_authenticated(pages["indeed"]):
+                        authenticated["indeed"] = True
+                        print("✅ Indeed: Successfully authenticated!")
+                        logger.info("Indeed authentication detected")
                 
                 # If all required platforms are authenticated, we can exit
                 all_platforms_done = all(
@@ -406,8 +477,8 @@ def main():
     try:
         logger.info("=== MAIN STARTED ===")
         parser = argparse.ArgumentParser(description="Authenticate with job platforms")
-        parser.add_argument("--platforms", nargs="+", default=["linkedin", "wellfound"],
-                          choices=["linkedin", "wellfound"])
+        parser.add_argument("--platforms", nargs="+", default=["linkedin", "wellfound", "indeed"],
+                          choices=["linkedin", "wellfound", "indeed"])
         parser.add_argument("--user-id", type=str, help="User ID for database storage")
         
         args = parser.parse_args()

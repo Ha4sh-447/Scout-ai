@@ -16,11 +16,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Remove old is_scheduler_active column if it exists
+    
     try:
         op.drop_column("user_settings", "is_scheduler_active")
     except Exception:
-        pass  # Column might not exist in some installations
+        pass 
     
     # Add missing columns
     op.add_column(
@@ -34,7 +34,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Remove added columns
     try:
         op.drop_column("user_settings", "browser_session")
     except Exception:
@@ -44,7 +43,7 @@ def downgrade() -> None:
     except Exception:
         pass
     
-    # Re-add is_scheduler_active if needed
+    
     try:
         op.add_column(
             "user_settings",

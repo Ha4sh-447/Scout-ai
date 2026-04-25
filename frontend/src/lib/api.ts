@@ -177,13 +177,14 @@ export async function deleteSearchLink(linkId: string, token: string) {
   return res.json();
 }
 
-export async function triggerBrowserAuthentication(token: string) {
+export async function triggerBrowserAuthentication(token: string, platforms: string[] = ["linkedin", "wellfound"]) {
   const res = await fetch(`${API_URL}/scrapers/authenticate`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
+    body: JSON.stringify({ platforms }),
   });
   if (!res.ok) throw new Error("Failed to trigger browser authentication");
   return res.json();

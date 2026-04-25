@@ -30,3 +30,7 @@ class SavedLinkResponse(BaseModel):
     url: str
     platform: str
     created_at: str
+
+
+class AuthenticateRequest(BaseModel):
+    platforms: List[str] = ["linkedin", "wellfound", "indeed"]

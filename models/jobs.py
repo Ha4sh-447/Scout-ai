@@ -39,6 +39,9 @@ class Job(BaseModel):
     skills: list[str] = []
     source_url: str
     description: str 
+    responsibilities: str | None = None
+    requirements: str | None = None
+    benefits: str | None = None
     about_company: str | None = None
 
     source_platform: str

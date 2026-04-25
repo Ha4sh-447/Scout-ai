@@ -127,6 +127,29 @@ async def _safe_query_selector_all(page: Page, selector: str, max_retries: int =
             raise e
 
 
+async def _is_cloudflare_challenge(page: Page) -> bool:
+    """Detect common Cloudflare interstitials that block scraping."""
+    try:
+        title = (await page.title()).lower()
+    except Exception:
+        title = ""
+
+    try:
+        body = (await page.evaluate("document.body.innerText.substring(0, 2000)")).lower()
+    except Exception:
+        body = ""
+
+    signals = [
+        "just a moment",
+        "cloudflare",
+        "additional verification required",
+        "ray id",
+        "checking your browser",
+    ]
+    haystack = f"{title}\n{body}"
+    return any(s in haystack for s in signals)
+
+
 async def _extract_linkedin_cards(page: Page, max_cards: int = 30) -> tuple[list[dict], bool]:
     """
     Extract job cards from LinkedIn search page.
@@ -324,13 +347,40 @@ async def _extract_linkedin_fallback_links(page: Page, job_links, max_cards: int
 
 async def _extract_indeed_cards(page: Page, max_cards: int = 30) -> list[dict]:
     """Extract job cards from Indeed search results."""
-    cards = await page.query_selector_all(".job_seen_beacon")
+    selectors = [
+        ".job_seen_beacon",
+        "div[data-jk]",
+        "div.jobsearch-SerpJobCard",
+        "li div[data-testid='slider_item']",
+        "main [data-testid='job-card']",
+    ]
+
+    cards = []
+    for selector in selectors:
+        cards = await page.query_selector_all(selector)
+        if cards:
+            logger.info(f"[listing_scraper] Indeed: matched {len(cards)} cards via selector '{selector}'")
+            break
+
+    if not cards:
+        page_title = await page.title()
+        current_url = page.url
+        logger.warning(f"[listing_scraper] Indeed: 0 cards found. title='{page_title}', url={current_url}")
+        try:
+            body_preview = await page.evaluate("document.body.innerText.substring(0, 1500)")
+            logger.warning(f"[listing_scraper] Indeed body text (first 1500 chars):\n{body_preview}")
+        except Exception:
+            pass
+        return []
+
     results = []
 
     for card in cards[:max_cards]:
         link_el = (
             await card.query_selector(".jobTitle a")
             or await card.query_selector("a[data-jk]")
+            or await card.query_selector("h2 a")
+            or await card.query_selector("a[href*='/viewjob']")
         )
 
         href = (await link_el.get_attribute("href")) if link_el else None
@@ -648,6 +698,23 @@ async def scrape_listing_page(
 
         wait_time = 5000 if platform == "linkedin" else 3000
         await page.wait_for_timeout(wait_time)
+
+        if platform == "indeed":
+            if await _is_cloudflare_challenge(page):
+                logger.warning("[listing_scraper] Indeed challenge page detected, retrying once after short wait...")
+                import random
+                await page.wait_for_timeout(random.randint(4000, 7000))
+                await page.reload(wait_until="domcontentloaded", timeout=20_000)
+                await page.wait_for_timeout(3000)
+
+            if await _is_cloudflare_challenge(page):
+                errors.append(
+                    "Indeed blocked by Cloudflare challenge (IP reputation / bot protection). "
+                    "Try authenticated browser session or residential IP/VPN, or disable Indeed for this run."
+                )
+                logger.warning("[listing_scraper] Indeed challenge persisted after retry; skipping Indeed extraction")
+                await page.close()
+                return [], errors
 
         is_guest_mode = False
         if platform == "linkedin":

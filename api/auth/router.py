@@ -10,6 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth.schemas import RegisterRequest, TokenResponse
 from fastapi import APIRouter
 import httpx
+import os
+import sys
+import subprocess
+from api.deps import get_current_user
 
 from db.models import User
 
@@ -100,3 +104,4 @@ async def sync_oauth_user(body: dict, db: AsyncSession = Depends(get_db)):
         user_id=user.id,
         email=user.email,
     )
+
