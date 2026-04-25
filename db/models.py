@@ -104,6 +104,7 @@ class JobResult(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=new_uuid)
     run_id: Mapped[str] = mapped_column(String, ForeignKey("pipeline_runs.id"), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False, index=True)
+    resume_id: Mapped[str] = mapped_column(String, nullable=False, default="default", index=True)
  
     # Job identity
     content_hash: Mapped[str] = mapped_column(String, nullable=False)

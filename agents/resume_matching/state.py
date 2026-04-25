@@ -9,6 +9,7 @@ from models.resume import MatchedJob
 class ResumeMatchingState(TypedDict):
     user_id: str
     resume_id: str | None = None
+    resume_ids: list[str] | None = None
     unique_jobs: list[Job]
     qdrant_cfg: QdrantConfig
     matching_cfg: ResumeMatchingConfig

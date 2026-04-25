@@ -42,6 +42,7 @@ async def process_resume_upload(
         raise RuntimeError("Embedding count mistmatch")
 
     for chunk, emb in zip(resume.chunks, chunk_embeddings):
+        chunk.resume_id = resume_id
         chunk.embeddings = emb
 
     # Embed full resume text

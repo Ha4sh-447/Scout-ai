@@ -6,6 +6,7 @@ class JobResultResponse(BaseModel):
     id: str
     run_id: str
     user_id: str
+    resume_id: str
     content_hash: str
     title: str
     company: str

@@ -7,10 +7,11 @@ Celery task that runs the full job pipeline for one user.
 import asyncio
 import logging
 import os
+from pathlib import Path
 from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from db.models import JobResult, Link, PipelineRun, User, UserSettings
+from db.models import JobResult, Link, PipelineRun, User, UserSettings, UserResume
 from models.config import (
         EmailConfig, QdrantConfig, RankingConfig,
         ResumeMatchingConfig, ScraperConfig,
@@ -152,9 +153,19 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                 logger.info(f"[pipeline] No new jobs found for run {run_id}")
                 return
 
+            resumes_result = await db.execute(
+                select(UserResume).where(
+                    UserResume.user_id == user_id,
+                    UserResume.is_active == True,
+                )
+            )
+            active_resumes = resumes_result.scalars().all()
+            resume_ids = list(dict.fromkeys([Path(r.file_name).stem for r in active_resumes if r.file_name]))
+
             match_result = await resume_matching_graph.ainvoke({
                 "user_id":      user_id,
                 "unique_jobs":  all_jobs,
+                "resume_ids":   resume_ids,
                 "qdrant_cfg":   qdrant_cfg,
                 "matching_cfg": matching_cfg,
                 "matched_jobs": [], "errors": [], "status": "starting",
@@ -202,6 +213,7 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                 jr = JobResult(
                     run_id=run_id,
                     user_id=user_id,
+                    resume_id=getattr(job, "resume_id", None) or "default",
                     content_hash=job_hash,
                     title=job.title,
                     company=job.company,

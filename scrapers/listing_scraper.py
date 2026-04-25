@@ -85,6 +85,26 @@ def _normalize_indeed_url(url: str, query: str = "") -> str:
     return f"{domain}/jobs?q={encoded}"
 
 
+def _broaden_indeed_query(query: str) -> str:
+    """Broaden terse/abbreviated queries that often return zero results on Indeed."""
+    if not query:
+        return query
+
+    widened = query
+    substitutions = [
+        (r"\bswe\b", "software engineer"),
+        (r"\bml\b", "machine learning"),
+        (r"\bai\b", "artificial intelligence"),
+        (r"\bintern\b", "internship"),
+        (r"\bdev\b", "developer"),
+    ]
+    for pattern, replacement in substitutions:
+        widened = re.sub(pattern, replacement, widened, flags=re.IGNORECASE)
+
+    widened = re.sub(r"\s+", " ", widened).strip()
+    return widened
+
+
 def _normalize_glassdoor_url(url: str, query: str = "") -> str:
     """Convert Glassdoor index to a search URL if needed."""
     if "SRCH" in url or "jobs-SRCH" in url:
@@ -723,6 +743,25 @@ async def scrape_listing_page(
                 logger.info("[listing_scraper] LinkedIn GUEST mode — skipping recruiter detail scraping (requires auth)")
         else:
             cards = await extract_fn(page, max_cards=max_cards)
+
+        if platform == "indeed" and not cards and query:
+            try:
+                body_preview = (await page.evaluate("document.body.innerText.substring(0, 2000)")).lower()
+            except Exception:
+                body_preview = ""
+
+            if "did not match any jobs" in body_preview or "search suggestions" in body_preview:
+                broader_query = _broaden_indeed_query(query)
+                if broader_query and broader_query.lower() != query.lower():
+                    broadened_url = _normalize_indeed_url(url, broader_query)
+                    logger.info(
+                        f"[listing_scraper] Indeed: retrying with broader query '{broader_query}' -> {broadened_url}"
+                    )
+                    await page.goto(broadened_url, wait_until="domcontentloaded", timeout=20_000)
+                    await page.wait_for_timeout(2500)
+                    cards = await _extract_indeed_cards(page, max_cards=max_cards)
+                    if cards:
+                        normalized = broadened_url
         
         await page.close()
         

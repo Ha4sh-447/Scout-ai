@@ -70,10 +70,12 @@ class BrowserManager:
             raise RuntimeError("Start BrowserManager first.")
         page = await self._context.new_page()
         try:
-            from playwright_stealth import stealth_async
-            await stealth_async(page)
+            import importlib
+            stealth_mod = importlib.import_module("playwright_stealth")
+            stealth_cls = getattr(stealth_mod, "Stealth")
+            await stealth_cls().apply_stealth_async(page)
             await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        except ImportError as e:
+        except (ImportError, AttributeError) as e:
             import logging
             logging.getLogger(__name__).warning(f"playwright-stealth unavailable ({e}), basic headless bypass will be used.")
             await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")

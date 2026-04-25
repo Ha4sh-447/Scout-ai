@@ -28,16 +28,27 @@ async def resume_matching_node(state: ResumeMatchingState) -> dict:
     jobs         = state.get("unique_jobs", [])
     user_id      = state["user_id"]
     resume_id    = state.get("resume_id")
+    resume_ids   = state.get("resume_ids")
     qdrant_cfg   = state.get("qdrant_cfg")   or QdrantConfig()
     matching_cfg = state.get("matching_cfg") or ResumeMatchingConfig()
 
-    logger.info(f"[resume_matching_node] Matching {len(jobs)} jobs for user {user_id} (resume_id: {resume_id})")
+    logger.info(
+        f"[resume_matching_node] Matching {len(jobs)} jobs for user {user_id} "
+        f"(resume_id: {resume_id}, resume_ids: {resume_ids})"
+    )
 
     if not jobs:
         return {"matched_jobs": [], "status": "matching_done"}
 
     try:
-        matched = await _match_all(jobs, user_id, qdrant_cfg, matching_cfg, resume_id=resume_id)
+        matched = await _match_all(
+            jobs,
+            user_id,
+            qdrant_cfg,
+            matching_cfg,
+            resume_id=resume_id,
+            resume_ids=resume_ids,
+        )
     except Exception as e:
         logger.error(f"[resume_matching_node] Fatal error: {e}")
         return {"matched_jobs": [], "errors": [str(e)], "status": "matching_failed"}
@@ -54,9 +65,17 @@ async def _match_all(
     qdrant_cfg: QdrantConfig,
     matching_cfg: ResumeMatchingConfig,
     resume_id: str | None = None,
+    resume_ids: list[str] | None = None,
 ) -> list[MatchedJob]:
 
-    stage1_results = await _stage1_chunk_filter(jobs, user_id, qdrant_cfg, matching_cfg, resume_id=resume_id)
+    stage1_results = await _stage1_chunk_filter(
+        jobs,
+        user_id,
+        qdrant_cfg,
+        matching_cfg,
+        resume_id=resume_id,
+        resume_ids=resume_ids,
+    )
     logger.info(f"[stage_1] {len(stage1_results)} jobs passed min_score filter")
 
     if not stage1_results:
@@ -78,6 +97,7 @@ async def _stage1_chunk_filter(
     qdrant_cfg: QdrantConfig,
     matching_cfg: ResumeMatchingConfig,
     resume_id: str | None = None,
+    resume_ids: list[str] | None = None,
 ) -> list[MatchedJob]:
     """Query resume_chunks for each job concurrently."""
     survivors: list[MatchedJob] = []
@@ -88,7 +108,15 @@ async def _stage1_chunk_filter(
         async def filter_one(job: Job) -> None:
             async with semaphore:
                 try:
-                    result = await _chunk_score_job(job, user_id, client, qdrant_cfg, matching_cfg, resume_id=resume_id)
+                    result = await _chunk_score_job(
+                        job,
+                        user_id,
+                        client,
+                        qdrant_cfg,
+                        matching_cfg,
+                        resume_id=resume_id,
+                        resume_ids=resume_ids,
+                    )
                     if result:
                         survivors.append(result)
                 except Exception as e:
@@ -107,6 +135,7 @@ async def _chunk_score_job(
     qdrant_cfg: QdrantConfig,
     cfg: ResumeMatchingConfig,
     resume_id: str | None = None,
+    resume_ids: list[str] | None = None,
 ) -> MatchedJob | None:
     """Score one job via chunk similarity. Returns None if below threshold."""
     query = f"{job.title}\n{job.description}\nSkills: {', '.join(job.skills)}"
@@ -114,30 +143,64 @@ async def _chunk_score_job(
     # embedding
     query_embedding = await embed_text(query)
 
-    chunks = await qdrant_find(
-        client=client,
-        collection_name=qdrant_cfg.collection_name,
-        query_embedding=query_embedding,
-        user_id=user_id,
-        resume_id=resume_id,
-        top_k=cfg.top_k_chunks,
-    )
+    search_resume_ids: list[str] = []
+    if resume_id:
+        search_resume_ids = [resume_id]
+    elif resume_ids:
+        search_resume_ids = list(dict.fromkeys([rid for rid in resume_ids if rid]))
 
-    if not chunks:
-        return None
+    if search_resume_ids:
+        resume_scores: list[tuple[str, float, float, list[dict], list[str]]] = []
+        for rid in search_resume_ids:
+            rid_chunks = await qdrant_find(
+                client=client,
+                collection_name=qdrant_cfg.collection_name,
+                query_embedding=query_embedding,
+                user_id=user_id,
+                resume_id=rid,
+                top_k=cfg.top_k_chunks,
+            )
+            if not rid_chunks:
+                continue
+            rid_chunk_score, _ = _aggregate_chunk_scores(rid_chunks)
 
-    chunk_score, winning_resume_id = _aggregate_chunk_scores(chunks)
+            rid_matched_text = " ".join(
+                c.get("information", c.get("text", "")) for c in rid_chunks
+            ).lower()
+            rid_top_skills = [s for s in job.skills if s.lower() in rid_matched_text]
+            rid_final_score = _apply_skill_adjustment(rid_chunk_score, job.skills, rid_top_skills)
+
+            logger.info(
+                f"[stage_1] Resume candidate '{rid}' for '{job.title}': "
+                f"chunk={rid_chunk_score:.4f}, final={rid_final_score:.4f}, matched_skills={len(rid_top_skills)}"
+            )
+            resume_scores.append((rid, rid_chunk_score, rid_final_score, rid_chunks, rid_top_skills))
+
+        if not resume_scores:
+            return None
+
+        winning_resume_id, chunk_score, final_score, chunks, top_skills = max(
+            resume_scores, key=lambda x: (x[2], x[1])
+        )
+    else:
+        chunks = await qdrant_find(
+            client=client,
+            collection_name=qdrant_cfg.collection_name,
+            query_embedding=query_embedding,
+            user_id=user_id,
+            resume_id=None,
+            top_k=cfg.top_k_chunks,
+        )
+        if not chunks:
+            return None
+        chunk_score, winning_resume_id = _aggregate_chunk_scores(chunks)
+        matched_text = " ".join(
+            c.get("information", c.get("text", "")) for c in chunks
+        ).lower()
+        top_skills = [s for s in job.skills if s.lower() in matched_text]
+        final_score = _apply_skill_adjustment(chunk_score, job.skills, top_skills)
+
     logger.info(f"[stage_1] Job: {job.title} @ {job.company} -> Base Chunk Score: {chunk_score:.4f} (Resume: {winning_resume_id})")
-
-    if chunk_score < cfg.min_match_score:
-        return None
-
-    matched_text = " ".join(
-        c.get("information", c.get("text", "")) for c in chunks
-    ).lower()
-    top_skills = [s for s in job.skills if s.lower() in matched_text]
-
-    final_score = _apply_skill_adjustment(chunk_score, job.skills, top_skills)
 
     if final_score < cfg.min_match_score:
         return None

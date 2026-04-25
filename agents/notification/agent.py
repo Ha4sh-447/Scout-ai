@@ -124,6 +124,7 @@ def _build_html(jobs: list[MatchedJob], run_label: str) -> str:
   .body{{padding:20px;}}
   .title{{font-size:18px;font-weight:700;color:#0f172a;margin:0 0 4px;line-height:1.4;}}
   .company{{font-size:14px;font-weight:600;color:#334155;margin-bottom:12px;}}
+  .resume-tag{{font-size:12px;color:#0f766e;background-color:#ecfeff;border:1px solid #bae6fd;padding:6px 10px;border-radius:8px;margin-bottom:12px;display:inline-block;max-width:100%;word-break:break-word;}}
   .meta{{font-size:13px;color:#64748b;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:8px;}}
   .meta-item{{background-color:#f1f5f9;padding:2px 8px;border-radius:6px;white-space:nowrap;}}
   .skills{{margin-bottom:16px;}}
@@ -148,6 +149,8 @@ def _build_html(jobs: list[MatchedJob], run_label: str) -> str:
     .title {{ font-size: 16px; }}
     .body {{ padding: 16px; }}
     .stat {{ margin: 4px 8px; display: block; }}
+    .meta-item {{ white-space: normal; word-break: break-word; }}
+    .resume-tag {{ display: block; }}
   }}
 </style>
 </head>
@@ -183,6 +186,9 @@ def _job_card(job: MatchedJob) -> str:
     if job.salary:
         meta_items.append(f"💰 {job.salary}")
     meta_html = "".join(f'<span class="meta-item">{m}</span>' for m in meta_items)
+    resume_html = ""
+    if job.resume_id:
+      resume_html = f'<div class="resume-tag">Matched Resume: <b>{job.resume_id}</b></div>'
 
     all_skills = job.skills[:8]
     skills_html = "".join(
@@ -249,6 +255,7 @@ def _job_card(job: MatchedJob) -> str:
     <div class="body">
       <h2 class="title">{job.title}</h2>
       <div class="company">{job.company}</div>
+      {resume_html}
       <div class="meta">
         {meta_html}
         {recency_html}

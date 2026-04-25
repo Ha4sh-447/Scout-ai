@@ -19,7 +19,7 @@ import PipelineHistory from "@/components/PipelineHistory";
 
 export default function Dashboard() {
   const { data: session, status } = useSession();
-  const [activeTab, setActiveTab] = useState("jobs");
+  const [activeTab, setActiveTab] = useState("overview");
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [liAtCookie, setLiAtCookie] = useState("");
@@ -276,7 +276,7 @@ export default function Dashboard() {
               <p className="text-sm font-medium text-white truncate">{session?.user?.name || "User Account"}</p>
               <p className="text-xs text-slate-500 truncate">Pro Plan</p>
             </div>
-            <button onClick={() => signOut()}>
+            <button onClick={() => signOut({ callbackUrl: "/" })}>
               <LogOut size={16} className="text-slate-500 hover:text-red-400" />
             </button>
           </div>
@@ -1011,6 +1011,7 @@ export default function Dashboard() {
                       <JobCard 
                         key={job.id}
                         id={job.id}
+                        resumeId={job.resume_id}
                         title={job.title} 
                         company={job.company} 
                         score={Math.round(job.final_score * 100)} 
@@ -1267,7 +1268,7 @@ function StatCard({ label, value, icon }: { label: string, value: string, icon: 
   );
 }
 
-function JobCard({ id, title, company, score, location, skills, time, url, platform, salary, description, experience, aboutCompany, responsibilities, requirements, benefits, emailDraft, linkedinDraft }: any) {
+function JobCard({ id, resumeId, title, company, score, location, skills, time, url, platform, salary, description, experience, aboutCompany, responsibilities, requirements, benefits, emailDraft, linkedinDraft }: any) {
   const [showDetails, setShowDetails] = useState(false);
   
   const getPlatformColor = (platform: string) => {
@@ -1318,6 +1319,7 @@ function JobCard({ id, title, company, score, location, skills, time, url, platf
               <span className="text-slate-500 flex items-center gap-1"><Clock size={12} /> {time}</span>
               <span className="text-slate-600 font-medium">Match Level: {score > 85 ? 'High' : score > 70 ? 'Moderate' : 'Low'}</span>
             </div>
+            <div className="text-xs text-slate-500">Matched Resume: <span className="text-slate-300 font-semibold">{resumeId || "default"}</span></div>
          </div>
 
          <div className="flex flex-wrap gap-2 mb-6 max-h-16 overflow-hidden">
@@ -1384,7 +1386,7 @@ function JobCard({ id, title, company, score, location, skills, time, url, platf
 
               <div className="flex-1 overflow-y-auto p-10 space-y-12 custom-scrollbar">
                 {/* Meta Highlights */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                   <div className="bg-slate-900/50 rounded-3xl p-5 border border-slate-800/50 hover:border-emerald-500/30 transition-colors">
                     <div className="flex items-center gap-2 text-slate-500 font-bold text-[10px] uppercase tracking-widest mb-2">
                       <Target size={14} className="text-emerald-500" /> Match Quality
@@ -1413,6 +1415,12 @@ function JobCard({ id, title, company, score, location, skills, time, url, platf
                       <Globe size={14} className="text-purple-500" /> Platform
                     </div>
                     <div className="text-xl font-bold text-white uppercase tracking-tight">{platform || "Generic"}</div>
+                  </div>
+                  <div className="bg-slate-900/50 rounded-3xl p-5 border border-slate-800/50 hover:border-emerald-500/30 transition-colors">
+                    <div className="flex items-center gap-2 text-slate-500 font-bold text-[10px] uppercase tracking-widest mb-2">
+                      <FileText size={14} className="text-emerald-500" /> Matched Resume
+                    </div>
+                    <div className="text-xl font-bold text-white truncate">{resumeId || "default"}</div>
                   </div>
                 </div>
 
