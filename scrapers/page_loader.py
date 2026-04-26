@@ -4,6 +4,7 @@ import asyncio
 import logging
 import random
 import re
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from typing import List
 
 from models.config import ScraperConfig
@@ -30,7 +31,26 @@ def detect_platform(url: str) -> str:
         return "glassdoor"
     if "wellfound.com" in url:
         return "wellfound"
-    return "generic"
+
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        host = ""
+
+    if not host:
+        return "generic"
+
+    host = re.sub(r"^(www\.|m\.|jobs\.|careers\.)", "", host)
+    parts = host.split(".")
+    if len(parts) >= 3 and parts[-2] in {"co", "com", "org", "net", "gov", "edu"}:
+        site = parts[-3]
+    elif len(parts) >= 2:
+        site = parts[-2]
+    else:
+        site = parts[0]
+
+    site = re.sub(r"[^a-z0-9]+", "_", site).strip("_")
+    return site or "generic"
 
 
 def normalize_single_job_url(url: str) -> str:
@@ -40,6 +60,84 @@ def normalize_single_job_url(url: str) -> str:
         if match:
             return f"https://www.linkedin.com/jobs/view/{match.group(1)}/"
     return url
+
+
+def _url_contains_query_terms(url: str, query: str) -> bool:
+    q = (query or "").strip().lower()
+    if not q:
+        return True
+
+    decoded_url = (url or "").lower().replace("+", " ").replace("%20", " ")
+    tokens = [t for t in re.split(r"\W+", q) if len(t) > 2]
+    if not tokens:
+        return q in decoded_url
+
+    hits = sum(1 for t in tokens if t in decoded_url)
+    required = max(1, len(tokens) // 2)
+    return hits >= required
+
+
+def _url_has_search_param(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query, keep_blank_values=True)
+    except Exception:
+        return False
+
+    search_keys = {
+        "q", "query", "keyword", "keywords", "search", "searchtext", "k", "term", "text", "wd", "what", "roles", "skills", "title", "position", "job_title"
+    }
+    return any(k.lower() in search_keys for k in params.keys())
+
+
+def _pick_search_param_key(params: dict[str, list[str]]) -> str | None:
+    """Pick the most likely existing query-intent key from URL params."""
+    if not params:
+        return None
+
+    priority_keys = [
+        "q", "query", "keyword", "keywords", "search", "searchtext", "k", "term", "text", "wd", "what",
+        "roles", "skills", "title", "position", "job_title",
+    ]
+
+    lower_to_original = {k.lower(): k for k in params.keys()}
+    for key in priority_keys:
+        if key in lower_to_original:
+            return lower_to_original[key]
+
+    for original_key in params.keys():
+        k = original_key.lower()
+        if any(token in k for token in ["query", "search", "keyword", "role", "skill", "title", "position", "term"]):
+            return original_key
+
+    return None
+
+
+def _inject_query_if_missing(url: str, query: str) -> str:
+    if not query:
+        return url
+
+    if _url_contains_query_terms(url, query):
+        return url
+
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+
+    existing_key = _pick_search_param_key(params)
+    if existing_key:
+        current_value = " ".join(params.get(existing_key, []))
+        if not _url_contains_query_terms(current_value, query):
+            params[existing_key] = [query]
+
+        if existing_key.lower() in {"roles", "skills", "title", "position", "job_title"}:
+            params.pop("q", None)
+
+        new_query = urlencode(params, doseq=True)
+        return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
+
+    params["q"] = [query]
+    new_query = urlencode(params, doseq=True)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
 
 
 async def _scrape_single_job(bm: BrowserManager, url: str) -> RawJobData | None:
@@ -118,6 +216,13 @@ async def load_job_pages(
         urls = generated_urls
 
     for i, url in enumerate(urls):
+        query_hint = " ".join(search_queries or []).strip()
+        if query_hint and not is_single_job_url(url):
+            maybe_updated = _inject_query_if_missing(url, query_hint)
+            if maybe_updated != url:
+                logger.info(f"[page_loader] Added missing query to URL: {url} -> {maybe_updated}")
+                url = maybe_updated
+
         platform = detect_platform(url)
         logger.info(f"[page_loader] ({i+1}/{len(urls)}) Scraping {platform}: {url}")
 

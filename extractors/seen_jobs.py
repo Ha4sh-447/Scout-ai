@@ -16,7 +16,11 @@ from models.jobs import RawJobData
 logger = logging.getLogger(__name__)
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
+
+
+def _get_redis_client() -> Redis:
+    # Run in different loopss
+    return Redis.from_url(REDIS_URL, decode_responses=True)
 
 async def filter_new_raw_jobs(raw_jobs: list[RawJobData], user_id: str) -> list[RawJobData]:
     """
@@ -28,17 +32,21 @@ async def filter_new_raw_jobs(raw_jobs: list[RawJobData], user_id: str) -> list[
 
     new_raw_jobs = []
     key = f"seen_jobs:{user_id}"
-    
-    pipe = redis_client.pipeline()
-    for raw_job in raw_jobs:
-        url_key = raw_job.source_url.lower().strip()
-        pipe.sismember(key, url_key)
-        
-    results = await pipe.execute()
-    
-    for raw_job, is_member in zip(raw_jobs, results):
-        if not is_member:
-            new_raw_jobs.append(raw_job)
+
+    redis_client = _get_redis_client()
+    try:
+        pipe = redis_client.pipeline()
+        for raw_job in raw_jobs:
+            url_key = raw_job.source_url.lower().strip()
+            pipe.sismember(key, url_key)
+
+        results = await pipe.execute()
+
+        for raw_job, is_member in zip(raw_jobs, results):
+            if not is_member:
+                new_raw_jobs.append(raw_job)
+    finally:
+        await redis_client.aclose()
 
     skipped = len(raw_jobs) - len(new_raw_jobs)
     if skipped > 0:
@@ -56,10 +64,14 @@ async def mark_seen_raw_jobs(raw_jobs: list[RawJobData], user_id: str) -> None:
         
     key = f"seen_jobs:{user_id}"
     url_keys = [raw_job.source_url.lower().strip() for raw_job in raw_jobs]
-    
-    if url_keys:
-        await redis_client.sadd(key, *url_keys)
-        # Keep tracking jobs for 30 days for this user
-        await redis_client.expire(key, 2592000)
-        
+
+    redis_client = _get_redis_client()
+    try:
+        if url_keys:
+            await redis_client.sadd(key, *url_keys)
+            # Keep tracking jobs for 30 days for this user
+            await redis_client.expire(key, 2592000)
+    finally:
+        await redis_client.aclose()
+
     logger.info(f"[seen_jobs] Marked {len(url_keys)} raw jobs as seen for {user_id}")

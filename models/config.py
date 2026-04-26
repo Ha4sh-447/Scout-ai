@@ -59,8 +59,15 @@ class ResumeMatchingConfig(BaseModel):
     top_k_chunks: int = Field(
         default=5, description="Number of resume chunks to retrieve"
     )
+    high_chunk_score_threshold: float = Field(
+        default=0.58,
+        description="Chunk cosine score threshold considered a high-confidence semantic match",
+    )
+    min_high_chunks_for_boost: int = Field(
+        default=2,
+        description="Minimum number of high-scoring chunks to boost confidence in resume selection",
+    )
 
-    # Resume reranking
     full_resume_weight: float = Field(
         default=0.35, description="Contribution of full resume score to final score"
     )

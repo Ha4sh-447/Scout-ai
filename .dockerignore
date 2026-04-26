@@ -1,12 +1,14 @@
 .git
 .gitignore
 __pycache__
+**/__pycache__
 *.pyc
 *.pyo
 *.pyd
 *.db
 *.sqlite3
 .env
+.env.*
 .venv
 venv
 node_modules
@@ -15,3 +17,9 @@ frontend/.next
 **/.next
 data
 *.log
+*.md
+backups
+local_tests
+graphify-out
+frontend
+mcp-server-qdrant

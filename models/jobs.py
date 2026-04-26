@@ -45,6 +45,7 @@ class Job(BaseModel):
     about_company: str | None = None
 
     source_platform: str
+    search_query: str | None = None
     scraped_at: datetime | None = None
 
     job_type: list[JobType] = [JobType.unknown]
@@ -62,6 +63,7 @@ class Job(BaseModel):
 class RawJobData(BaseModel):
     source_url: str
     source_platform: str
+    search_query: str | None = None
     raw_text: str
     raw_html: str | None = None
     scraped_at: datetime | None = None

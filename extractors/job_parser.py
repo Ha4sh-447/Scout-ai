@@ -49,7 +49,8 @@ Rules:
 - skills: technical skills only; normalise variants (ReactJS→React, Node.js→Node)
 - job_type array: values from {remote, on_site, hybrid, full_time, part_time, contract, internship, unknown}
 - description: a concise hook for the role
-- Return a JSON ARRAY of objects, one per job, in the same index order
+- CRITICAL: If the input text is clearly NOT a job posting (e.g., navigation links, generic platform pages like "Student Dashboard", "About Us", "Registration"), SKIP IT by returning null for that index or excluding it from the final array. Only output actual job listings.
+- Return a JSON ARRAY of objects, one per job, in the same index order.
 - NO markdown, NO explanation — raw JSON array only\
 """
 
@@ -98,7 +99,7 @@ async def parse_jobs_batch(raw_jobs) -> tuple[list[Job], list[str]]:
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     router    = await get_router(redis_url)
 
-    max_batch = 3  # keep prompts under llama_8b's 6K TPM limit
+    max_batch = 3
 
     chunks = [raw_jobs[i:i+max_batch] for i in range(0, len(raw_jobs), max_batch)]
 
@@ -170,6 +171,9 @@ async def _parse_chunk(
                 data = [data]
 
             for item in data:
+                if not item:
+                    # Skip null items (as instructed to the LLM for non-jobs)
+                    continue
                 try:
                     schema = _ParsedJobSchema(**item)
                     idx    = schema.index

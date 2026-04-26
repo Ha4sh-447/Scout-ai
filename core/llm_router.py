@@ -61,6 +61,21 @@ PROVIDERS = [
     },
 ]
 
+
+def _resolve_enabled_providers() -> list[dict]:
+    groq_key = os.getenv("GROQ_API_KEY", "").strip()
+    mistral_key = os.getenv("MISTRAL_API_KEY", "").strip()
+
+    enabled: list[dict] = []
+    for p in PROVIDERS:
+        if p["client_type"] == "groq" and not groq_key:
+            continue
+        if p["client_type"] == "mistral" and not mistral_key:
+            continue
+        enabled.append(p)
+
+    return enabled
+
 _RPD_KEY        = "llm:{name}:rpd_used"
 _CIRCUIT_KEY    = "llm:{name}:circuit_open"
 _USER_QUOTA_KEY = "llm:user:{user_id}:today:calls"
@@ -81,7 +96,9 @@ class LLMRouter:
     """
     def __init__(self, redis: aioredis.Redis):
         self._redis = redis
-        self._groq  = AsyncGroq(api_key=os.getenv("GROQ_API_KEY", ""))
+        groq_key = os.getenv("GROQ_API_KEY", "").strip()
+        self._groq  = AsyncGroq(api_key=groq_key) if groq_key else None
+        self._providers = _resolve_enabled_providers()
         self._fail_counts: dict[str, int] = {}
 
 
@@ -158,8 +175,13 @@ class LLMRouter:
 
     async def _rank_providers(self) -> list[dict]:
         """Sort providers by load score = rpd_used / rpd_limit (ascending)."""
+        if not self._providers:
+            raise RuntimeError(
+                "No LLM provider configured. Set MISTRAL_API_KEY (required) and optionally GROQ_API_KEY."
+            )
+
         scored = []
-        for p in PROVIDERS:
+        for p in self._providers:
             used = int(await self._redis.get(_RPD_KEY.format(name=p["name"])) or 0)
             score = used / p["rpd_limit"]
             if used < p["rpd_limit"]:
@@ -188,6 +210,9 @@ class LLMRouter:
         self, model: str, system: str, user_content: str,
         response_format: dict | None, max_tokens: int
     ) -> str:
+        if self._groq is None:
+            raise RuntimeError("GROQ_API_KEY is not configured")
+
         kwargs: dict[str, Any] = {
             "model":      model,
             "max_tokens": max_tokens,

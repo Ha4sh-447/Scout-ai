@@ -2,6 +2,7 @@
 
 import logging
 import re
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from playwright.async_api import Page
 
@@ -51,6 +52,30 @@ def is_known_listing(url: str) -> bool:
     return is_linkedin_listing(url) or is_indeed_listing(url) or is_glassdoor_listing(url) or is_wellfound_listing(url)
 
 
+def _url_contains_query_terms(url: str, query: str) -> bool:
+    """Return True when URL already appears to encode the requested search intent."""
+    q = (query or "").strip().lower()
+    if not q:
+        return True
+
+    decoded_url = (url or "").lower().replace("+", " ").replace("%20", " ")
+    tokens = [t for t in re.split(r"\W+", q) if len(t) > 2]
+    if not tokens:
+        return q in decoded_url
+
+    hits = sum(1 for t in tokens if t in decoded_url)
+    required = max(1, len(tokens) // 2)
+    return hits >= required
+
+
+def _set_query_param(url: str, key: str, value: str) -> str:
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params[key] = [value]
+    new_query = urlencode(params, doseq=True)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
+
+
 def _normalize_linkedin_url(url: str, query: str = "", freshness: str = "default") -> str:
     """
     Convert any LinkedIn jobs URL to the public guest search endpoint or respect auth collections.
@@ -67,8 +92,12 @@ def _normalize_linkedin_url(url: str, query: str = "", freshness: str = "default
         return url
 
     if "/jobs/search/" in url and "keywords=" in url:
-        if "&f_TPR=" not in url:
-            return url + suffix
+        if query and not _url_contains_query_terms(url, query):
+            url = _set_query_param(url, "keywords", query)
+
+        if "f_TPR=" not in url and suffix:
+            joiner = "&" if "?" in url else "?"
+            return url + joiner + suffix.lstrip("&")
         return url
 
     encoded = query.replace(" ", "+")
@@ -77,7 +106,9 @@ def _normalize_linkedin_url(url: str, query: str = "", freshness: str = "default
 
 def _normalize_indeed_url(url: str, query: str = "") -> str:
     """Convert Indeed homepage to a search URL if needed."""
-    if "/jobs?" in url and "q=" in url:
+    if "/jobs" in url and "q=" in url:
+        if query and not _url_contains_query_terms(url, query):
+            return _set_query_param(url, "q", query)
         return url
     match = re.match(r"(https?://[^/]+)", url)
     domain = match.group(1) if match else "https://in.indeed.com"
@@ -108,6 +139,8 @@ def _broaden_indeed_query(query: str) -> str:
 def _normalize_glassdoor_url(url: str, query: str = "") -> str:
     """Convert Glassdoor index to a search URL if needed."""
     if "SRCH" in url or "jobs-SRCH" in url:
+        if query and "sc.keyword=" in url and not _url_contains_query_terms(url, query):
+            return _set_query_param(url, "sc.keyword", query)
         return url
     match = re.match(r"(https?://[^/]+)", url)
     domain = match.group(1) if match else "https://www.glassdoor.co.in"

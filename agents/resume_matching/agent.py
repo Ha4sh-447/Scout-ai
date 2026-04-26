@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 
 from agents.resume_matching.state import ResumeMatchingState
 from core.embeddings import embed_text
@@ -23,6 +24,133 @@ _SECTION_WEIGHTS = {
     "summary":        0.75,
     "other":          1.0,
 }
+
+_AI_HINTS = {
+    "ai", "ml", "machine learning", "deep learning", "llm", "nlp", "genai", "artificial intelligence",
+    "computer vision", "rag", "prompt", "data scientist", "model"
+}
+_SWE_HINTS = {
+    "swe", "software engineer", "backend", "frontend", "full stack", "full-stack", "intern", "internship",
+    "react", "node", "java", "golang", "python", "developer", "engineering"
+}
+
+_NAV_KEYWORDS = {
+    "student", "employer", "login", "register", "signup", "rules", "terms", "privacy", "about", "contact",
+    "dashboard", "profile", "settings", "notifications", "support", "help", "company", "companies"
+}
+
+
+def _normalize_text(s: str | None) -> str:
+    return re.sub(r"\s+", " ", (s or "").lower()).strip()
+
+
+def _contains_any(text: str, phrases: set[str]) -> bool:
+    return any(p in text for p in phrases)
+
+
+def _infer_role_signal(job: Job) -> str | None:
+    haystack = _normalize_text(
+        " ".join(
+            [job.search_query or "", job.title or "", job.description or "", " ".join(job.skills or [])]
+        )
+    )
+    if not haystack:
+        return None
+
+    ai_hits = sum(1 for p in _AI_HINTS if p in haystack)
+    swe_hits = sum(1 for p in _SWE_HINTS if p in haystack)
+
+    if ai_hits > swe_hits and ai_hits > 0:
+        return "ai"
+    if swe_hits > ai_hits and swe_hits > 0:
+        return "swe"
+    return None
+
+
+def _infer_resume_track(resume_id: str) -> str | None:
+    rid = _normalize_text(resume_id)
+    if not rid:
+        return None
+
+    has_ai = _contains_any(rid, _AI_HINTS)
+    has_swe = _contains_any(rid, _SWE_HINTS)
+
+    if has_ai and not has_swe:
+        return "ai"
+    if has_swe and not has_ai:
+        return "swe"
+    return None
+
+
+def _apply_query_prior(score: float, resume_id: str, role_signal: str | None) -> float:
+    if not role_signal:
+        return score
+
+    track = _infer_resume_track(resume_id)
+    if not track:
+        return score
+
+    if track == role_signal:
+        return min(max(score * 1.08, 0.0), 1.0)
+    return min(max(score * 0.95, 0.0), 1.0)
+
+
+def _build_semantic_job_query(job: Job) -> str:
+    """Build a richer semantic query from the full scraped job context."""
+    parts = [
+        job.title or "",
+        job.description or "",
+        f"Skills: {', '.join(job.skills or [])}",
+        job.requirements or "",
+        job.responsibilities or "",
+        job.benefits or "",
+        job.about_company or "",
+        f"Experience: {job.experience or ''}",
+    ]
+    return "\n".join([p for p in parts if p and p.strip()])
+
+
+def _score_resume_chunks_for_vote(
+    chunks: list[dict],
+    cfg: ResumeMatchingConfig,
+) -> tuple[int, int, float, float]:
+    """
+    Returns:
+      high_count: chunks above high threshold
+      strong_count: chunks significantly above threshold
+      weighted_avg: section-weighted average over top chunks
+      final_score: vote-aware semantic score for ranking
+    """
+    if not chunks:
+        return 0, 0, 0.0, 0.0
+
+    threshold = cfg.high_chunk_score_threshold
+    strong_threshold = min(0.95, threshold + 0.08)
+
+    high_count = sum(1 for c in chunks if c.get("score", 0.0) >= threshold)
+    strong_count = sum(1 for c in chunks if c.get("score", 0.0) >= strong_threshold)
+
+    total_score = 0.0
+    total_weight = 0.0
+    for chunk in chunks[: max(3, min(len(chunks), cfg.top_k_chunks))]:
+        metadata = chunk.get("metadata", {})
+        section = metadata.get("section", "other")
+        score = chunk.get("score", 0.0)
+        weight = _SECTION_WEIGHTS.get(section, 1.0)
+        total_score += score * weight
+        total_weight += weight
+
+    weighted_avg = total_score / total_weight if total_weight > 0 else 0.0
+
+    # Vote bonus: prefer resumes that match across multiple chunks, not just one peak chunk.
+    vote_bonus = 0.0
+    if high_count >= cfg.min_high_chunks_for_boost:
+        vote_bonus += min(0.06, 0.02 * (high_count - cfg.min_high_chunks_for_boost + 1))
+    if strong_count > 0:
+        vote_bonus += min(0.04, 0.015 * strong_count)
+
+    final_score = min(max(weighted_avg + vote_bonus, 0.0), 1.0)
+    return high_count, strong_count, weighted_avg, final_score
 
 async def resume_matching_node(state: ResumeMatchingState) -> dict:
     jobs         = state.get("unique_jobs", [])
@@ -138,10 +266,11 @@ async def _chunk_score_job(
     resume_ids: list[str] | None = None,
 ) -> MatchedJob | None:
     """Score one job via chunk similarity. Returns None if below threshold."""
-    query = f"{job.title}\n{job.description}\nSkills: {', '.join(job.skills)}"
+    query = _build_semantic_job_query(job)
     
     # embedding
     query_embedding = await embed_text(query)
+    role_signal = _infer_role_signal(job)
 
     search_resume_ids: list[str] = []
     if resume_id:
@@ -150,7 +279,7 @@ async def _chunk_score_job(
         search_resume_ids = list(dict.fromkeys([rid for rid in resume_ids if rid]))
 
     if search_resume_ids:
-        resume_scores: list[tuple[str, float, float, list[dict], list[str]]] = []
+        resume_scores: list[tuple[str, int, int, float, float, list[dict], list[str]]] = []
         for rid in search_resume_ids:
             rid_chunks = await qdrant_find(
                 client=client,
@@ -162,25 +291,33 @@ async def _chunk_score_job(
             )
             if not rid_chunks:
                 continue
-            rid_chunk_score, _ = _aggregate_chunk_scores(rid_chunks)
+            high_count, strong_count, rid_chunk_score, rid_vote_score = _score_resume_chunks_for_vote(rid_chunks, cfg)
 
             rid_matched_text = " ".join(
                 c.get("information", c.get("text", "")) for c in rid_chunks
             ).lower()
             rid_top_skills = [s for s in job.skills if s.lower() in rid_matched_text]
-            rid_final_score = _apply_skill_adjustment(rid_chunk_score, job.skills, rid_top_skills)
+            rid_final_score = _apply_skill_adjustment(rid_vote_score, job.skills, rid_top_skills)
+            rid_final_with_prior = _apply_query_prior(rid_final_score, rid, role_signal)
 
             logger.info(
                 f"[stage_1] Resume candidate '{rid}' for '{job.title}': "
-                f"chunk={rid_chunk_score:.4f}, final={rid_final_score:.4f}, matched_skills={len(rid_top_skills)}"
+                f"high_chunks={high_count}, strong_chunks={strong_count}, "
+                f"chunk_avg={rid_chunk_score:.4f}, vote_score={rid_vote_score:.4f}, final={rid_final_score:.4f}, "
+                f"final_with_prior={rid_final_with_prior:.4f}, matched_skills={len(rid_top_skills)}, "
+                f"role_signal={role_signal}"
             )
-            resume_scores.append((rid, rid_chunk_score, rid_final_score, rid_chunks, rid_top_skills))
+            resume_scores.append((rid, high_count, strong_count, rid_chunk_score, rid_final_with_prior, rid_chunks, rid_top_skills))
 
         if not resume_scores:
             return None
 
-        winning_resume_id, chunk_score, final_score, chunks, top_skills = max(
-            resume_scores, key=lambda x: (x[2], x[1])
+        winning_resume_id, high_count, strong_count, chunk_score, final_score, chunks, top_skills = max(
+            resume_scores, key=lambda x: (x[1], x[2], x[4], x[3])
+        )
+        logger.info(
+            f"[stage_1] Resume winner for '{job.title}': {winning_resume_id} "
+            f"(high_chunks={high_count}, strong_chunks={strong_count}, score={final_score:.4f})"
         )
     else:
         chunks = await qdrant_find(
@@ -189,18 +326,59 @@ async def _chunk_score_job(
             query_embedding=query_embedding,
             user_id=user_id,
             resume_id=None,
-            top_k=cfg.top_k_chunks,
+            top_k=max(cfg.top_k_chunks, 20),
         )
         if not chunks:
             return None
-        chunk_score, winning_resume_id = _aggregate_chunk_scores(chunks)
-        matched_text = " ".join(
-            c.get("information", c.get("text", "")) for c in chunks
-        ).lower()
-        top_skills = [s for s in job.skills if s.lower() in matched_text]
-        final_score = _apply_skill_adjustment(chunk_score, job.skills, top_skills)
+
+        from collections import defaultdict
+        by_resume: dict[str, list[dict]] = defaultdict(list)
+        for c in chunks:
+            rid = c.get("metadata", {}).get("resume_id", "default")
+            by_resume[rid].append(c)
+
+        resume_scores: list[tuple[str, int, int, float, float, list[dict], list[str]]] = []
+        for rid, rid_chunks in by_resume.items():
+            rid_chunks.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+            rid_chunks = rid_chunks[: cfg.top_k_chunks]
+
+            high_count, strong_count, rid_chunk_score, rid_vote_score = _score_resume_chunks_for_vote(rid_chunks, cfg)
+            rid_matched_text = " ".join(
+                c.get("information", c.get("text", "")) for c in rid_chunks
+            ).lower()
+            rid_top_skills = [s for s in job.skills if s.lower() in rid_matched_text]
+            rid_final_score = _apply_skill_adjustment(rid_vote_score, job.skills, rid_top_skills)
+            resume_scores.append((rid, high_count, strong_count, rid_chunk_score, rid_final_score, rid_chunks, rid_top_skills))
+
+        if not resume_scores:
+            return None
+
+        winning_resume_id, _, _, chunk_score, final_score, chunks, top_skills = max(
+            resume_scores, key=lambda x: (x[1], x[2], x[4], x[3])
+        )
 
     logger.info(f"[stage_1] Job: {job.title} @ {job.company} -> Base Chunk Score: {chunk_score:.4f} (Resume: {winning_resume_id})")
+
+    # Hardening: Penalize navigation-like titles
+    title_words = (job.title or "").lower().split()
+    if len(title_words) == 1 and title_words[0] in _NAV_KEYWORDS:
+        logger.info(f"[scoring] CRITICAL PENALTY: Navigation-like title detected ('{job.title}')")
+        final_score *= 0.1
+    elif len(title_words) < 2:
+        final_score *= 0.7  # relaxed from 0.5
+        
+    # Be more lenient with descriptions, especially for generic scrapers that only get snippets
+    _DEDICATED_PLATFORMS = {"linkedin", "indeed", "glassdoor", "wellfound", "reddit"}
+    is_dedicated = job.source_platform in _DEDICATED_PLATFORMS
+    
+    if not job.description or len(job.description) < 50:
+        if is_dedicated:
+            logger.info(f"[scoring] PENALTY: Extremely short description on dedicated platform ({job.source_platform})")
+            final_score *= 0.4
+        elif not job.description or len(job.description) < 20:
+            logger.info(f"[scoring] PENALTY: Extremely short description on generic platform")
+            final_score *= 0.8
+
 
     if final_score < cfg.min_match_score:
         return None

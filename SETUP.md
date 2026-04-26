@@ -20,7 +20,6 @@ This script will:
 - ✓ Setup frontend dependencies
 - ✓ Start Docker containers (optional)
 - ✓ Run database migrations (optional)
-- ✓ Run human-readable preflight checks
 
 ### 2. Manual Setup
 
@@ -97,7 +96,8 @@ Required variables in `.env`:
 ```env
 # API Keys
 MISTRAL_API_KEY=your_key_here
-QDRANT_API_KEY=your_key_here (optional)
+GROQ_API_KEY=your_key_here (optional but recommended, for better fallback and faster LLM functionality)
+QDRANT_API_KEY=your_key_here (optional for local Qdrant, required for cloud/secured Qdrant)
 
 # Database
 DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:5432/<db_name>
@@ -119,6 +119,25 @@ EMAIL_SMTP_HOST=smtp.gmail.com
 EMAIL_SMTP_PORT=587
 EMAIL_RECIPIENT=recipient@gmail.com
 ```
+
+### Why QDRANT_API_KEY Is Optional in Some Places
+
+- Local Docker Qdrant usually runs without authentication, so `QDRANT_API_KEY` can be omitted.
+- Qdrant Cloud or any secured Qdrant deployment requires `QDRANT_API_KEY`.
+- `QDRANT_URL` is still required so the app knows where to connect.
+
+### How User Resume Data Is Isolated in Qdrant
+
+- Every stored vector includes payload metadata with `user_id` and `resume_id`.
+- Resume retrieval queries filter by `user_id` (and optionally `resume_id`), so users do not query each other's vectors.
+- On resume re-upload, vectors for the same `user_id + resume_id` are cleared before upserting the new version.
+
+### Recent Pipeline/Matching Updates
+
+- Semantic resume matching now uses full job context and chunk-vote winner selection (not only top single chunk score).
+- Generic scraping was hardened with popup-aware extraction and stronger ad/navigation filtering.
+- URL query injection is now dynamic and updates existing search-intent params when present (instead of blindly appending `q`).
+- Seen-job Redis tracking in workers is loop-safe to avoid `Event loop is closed` failures across Celery tasks.
 
 ## Docker Services
 

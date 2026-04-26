@@ -139,7 +139,13 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
                         "errors": [], "status": "starting",
                         "freshness": "default", "retry_count": 0,
                     })
-                    all_jobs.extend(result.get("unique_jobs", []))
+                    discovered = result.get("unique_jobs", [])
+                    for job in discovered:
+                        try:
+                            job.search_query = query
+                        except Exception:
+                            pass
+                    all_jobs.extend(discovered)
                 except Exception as e:
                     logger.warning(f"[pipeline] Discovery failed for '{query}': {e}")
 

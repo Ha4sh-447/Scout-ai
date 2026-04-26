@@ -23,7 +23,8 @@ An intelligent job discovery platform powered by AI agents that finds, matches, 
 - **Python** 3.9+, **Docker**, **Git**
 - **Google Account** (for email SMTP & optional OAuth)
 - **LinkedIn Account** (for job scraping)
-- **Groq & Mistral AI Accounts** (for LLMs and embeddings)
+- **Mistral AI Account** (required for embeddings + LLM fallback)
+- **Groq Account** (optional but recommended for better fallback coverage and faster LLM functionality)
 - **Node.js 18+** (for frontend development)
 
 ### Setup (All Platforms)
@@ -49,12 +50,16 @@ nano .env  # Edit with your credentials
 
 **Required:**
 - `MISTRAL_API_KEY` - Get from [mistral.ai](https://mistral.ai) (Embeddings & Backup LLM)
-- `GROQ_API_KEY` - Get from [groq.com](https://groq.com) (Primary fast LLMs)
 - `JWT_SECRET_KEY` - Any random string (Backend auth)
 - `AUTH_SECRET` - Random string for NextAuth (`openssl rand -base64 32`)
 - `EMAIL_SENDER` - Your Gmail address
 - `EMAIL_PASSWORD` - [Gmail app password](https://myaccount.google.com/apppasswords)
 - `DATABASE_URL` - PostgreSQL connection string
+- `QDRANT_URL` - Qdrant endpoint (local Docker or cloud)
+
+**Optional but recommended:**
+- `GROQ_API_KEY` - Get from [groq.com](https://groq.com) (optional but recommended for better fallbacks and faster LLM functionality)
+- `QDRANT_API_KEY` - Required only when your Qdrant deployment has auth enabled (Qdrant Cloud / secured cluster). Optional for local unsecured Qdrant.
 
 See [Configuration Reference](#-configuration-reference) for the complete list of system environment variables.
 
@@ -135,10 +140,30 @@ qdrant
 
 ### 2) Set local environment variables in `.env`
 ```env
+# Core API keys
+MISTRAL_API_KEY=<mistral-api-key>
+GROQ_API_KEY=<groq-api-key>                    # optional but recommended
+QDRANT_API_KEY=<qdrant-api-key>
+
+# Auth / app secrets
+JWT_SECRET_KEY=<jwt-secret>
+AUTH_SECRET=<nextauth-secret>
+
+GOOGLE_CLIENT_ID=<google-oauth-client-id>
+GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
+LANGCHAIN_API_KEY=<langchain-api-key>
+
+# Infrastructure
 DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:5432/<db_name>
 REDIS_URL=<redis-cluster-url-from-dashboard>
 CELERY_BROKER_URL=<redis-cluster-url-from-dashboard>
 QDRANT_URL=<qdrant-cluster-url-from-dashboard>
+
+# Notifications
+EMAIL_SENDER=<sender-email>
+EMAIL_PASSWORD=<email-app-password>
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_PORT=587
 ```
 
 Examples:
@@ -203,6 +228,29 @@ from URLs     + semantic search   relevance    outreach   digest
 4. **Messaging**: AI generates personalized connection messages
 5. **Notification**: Sends email digest with jobs and suggested messages
 
+### Qdrant Auth and User Isolation
+
+- `QDRANT_API_KEY` is optional in docs because local Docker Qdrant commonly runs without API auth.
+- For Qdrant Cloud or any secured deployment, set `QDRANT_API_KEY`.
+- Resume vectors are isolated per user in payload metadata and query filters:
+    - Chunk vectors are stored with `user_id` and `resume_id`.
+    - Full-resume vectors are stored with `user_id` and `resume_id`.
+    - Retrieval always applies a `must` filter on `user_id` (and often `resume_id`).
+- During resume upload, old vectors for the same `user_id + resume_id` are deleted before upsert, so each resume version remains consistent.
+
+### Qdrant Access Architecture (Native vs MCP)
+
+- This project has two Qdrant access paths on purpose:
+- Native app path (used by the pipeline):
+    `resume/pipeline.py` and `agents/resume_matching/agent.py` call `core/qdrant_mcp.py`, which uses `AsyncQdrantClient` directly against `QDRANT_URL`.
+- MCP tool path (used by MCP-compatible clients):
+    the `qdrant-mcp` service in `docker-compose.yml` runs `mcp-server-qdrant` on port `8000` and exposes MCP tools like `qdrant-find` and `qdrant-store`.
+
+Why keep both:
+- Native path keeps internal pipeline operations fast and tightly controlled.
+- MCP path enables external MCP clients/agents to query or store semantic memory in the same Qdrant backend.
+- Do not remove `mcp-server-qdrant` during Docker optimizations if MCP tooling is part of your workflow.
+
 ---
 
 ## 🔧 Configuration Reference
@@ -212,13 +260,14 @@ from URLs     + semantic search   relevance    outreach   digest
 | Variable | Purpose | Example |
 |----------|---------|---------|
 | `MISTRAL_API_KEY` | Embeddings & LLM | Get from mistral.ai |
-| `GROQ_API_KEY` | Fast LLM Provider | Get from groq.com |
+| `GROQ_API_KEY` | Fast LLM Provider (optional but recommended) | Get from groq.com |
 | `JWT_SECRET_KEY` | Backend Signatures | Any random string |
 | `AUTH_SECRET` | NextAuth Encryption | `openssl rand -base64 32` |
 | `EMAIL_SENDER` | SMTP Sender | your-email@gmail.com |
 | `EMAIL_PASSWORD` | SMTP Password | 16-digit app password |
 | `REDIS_URL` | Task Queue Broker | redis://redis:6379/0 |
 | `QDRANT_URL` | Vector DB connection | http://qdrant:6333 |
+| `QDRANT_API_KEY` | Qdrant auth token (required on secured/cloud Qdrant) | Optional for local; required for cloud |
 | `DATABASE_URL` | Postgres Connection | postgresql+asyncpg://... |
 
 **Advanced Configuration (Optional):**
@@ -267,12 +316,15 @@ from URLs     + semantic search   relevance    outreach   digest
 
 ## ✨ Features
 
-- ✅ **Smart LLM Routing**: Distributed load-balancing across Groq and Mistral providers.
+- ✅ **Smart LLM Routing**: Distributed load-balancing across Groq and Mistral providers, with provider auto-enablement based on available keys.
 - ✅ **Circuit Breaker**: Auto-healing rate-limit protection for all AI operations.
 - ✅ **Per-User AI Quotas**: Enforced daily limits to manage capacity and costs.
 - ✅ **Response Caching**: Efficient AI usage via SHA256-keyed caching.
 - ✅ **AI-powered job discovery** from multiple sources (LinkedIn, Indeed, etc.).
-- ✅ **Semantic resume matching** with vector embeddings.
+- ✅ **Semantic resume matching** with vector embeddings and chunk-vote winner selection across resumes.
+- ✅ **Platform-aware URL query rewriting**: updates existing search params (for example `roles`, `keywords`) instead of blindly appending new ones.
+- ✅ **Generic scraper hardening**: popup-aware extraction and stronger filtering for navigation/ad links on generic portals.
+- ✅ **Seen-job loop safety in workers**: async Redis access uses per-call clients to avoid event-loop reuse issues.
 - ✅ **Multi-factor relevance scoring** (Match, Recency, Quality).
 - ✅ **Personalized AI outreach** message generation.
 - ✅ **Automated email digests** & recurring scheduled runs.
