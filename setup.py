@@ -86,6 +86,15 @@ def _version_of(cmd: str) -> str:
     except Exception:
         return "unknown"
 
+
+def _docker_daemon_available() -> bool:
+    """Return True if Docker CLI can talk to the daemon/socket."""
+    try:
+        _run(["docker", "info"], check=True, capture=True)
+        return True
+    except Exception:
+        return False
+
 def step_check_prerequisites() -> bool:
     """Check required and optional tools. Returns False if required tools are missing."""
     header("Step 1 · Checking Prerequisites")
@@ -262,12 +271,35 @@ def step_docker_services():
         warn("Docker Compose not found — skipping service startup")
         return
 
+    if not _docker_daemon_available():
+        error("Docker daemon is not reachable.")
+        print("  This is not a compose service naming issue.")
+        print("  Fix one of the following and run setup again:")
+        if IS_LINUX:
+            print("  1) Start daemon: sudo systemctl start docker")
+            print("  2) Enable on boot: sudo systemctl enable docker")
+            print("  3) Optional non-root access: sudo usermod -aG docker $USER (then re-login)")
+            print("  4) Verify: docker info")
+        else:
+            print("  1) Start Docker Desktop")
+            print("  2) Verify: docker info")
+        return
+
     if _ask("Start Docker services (PostgreSQL, Redis, Qdrant, Celery)?"):
         info("Starting services with docker compose up -d…")
-        _run(compose_cmd + ["up", "-d"])
-        ok("Docker services started")
-        info("Waiting 10 seconds for services to initialise…")
-        import time; time.sleep(10)
+        try:
+            _run(compose_cmd + ["up", "-d"])
+            ok("Docker services started")
+            info("Waiting 10 seconds for services to initialise…")
+            import time
+            time.sleep(10)
+        except RuntimeError as e:
+            error(str(e))
+            print("  If you see 'Cannot connect to the Docker daemon', start Docker first:")
+            if IS_LINUX:
+                print("  sudo systemctl start docker")
+            else:
+                print("  Start Docker Desktop")
     else:
         warn("Skipped. Run manually later: docker compose up -d")
 

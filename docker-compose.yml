@@ -33,6 +33,7 @@ services:
       ALLOW_ALEMBIC_STAMP_REPAIR: "true"
     restart: unless-stopped
     volumes:
+      - .:/app
       - ./data:/app/data
       - ./data/resumes:/app/data/resumes
 
@@ -136,12 +137,17 @@ services:
       EMAIL_PASSWORD: ${EMAIL_PASSWORD}
       EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST}
       EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT}
+      PLAYWRIGHT_BROWSERS_PATH: "/ms-playwright"
+      PLAYWRIGHT_INSTALL_ON_STARTUP: "true"
     restart: unless-stopped
     volumes:
+      - .:/app
       - ./data:/app/data
       - ./data/resumes:/app/data/resumes
+      - playwright_browsers:/ms-playwright
 
 volumes:
   qdrant_data:
   postgres_data:
   redis_data:
+  playwright_browsers:
