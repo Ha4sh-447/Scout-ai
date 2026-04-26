@@ -13,6 +13,7 @@ RUN echo "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99-ignore
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libssl-dev \
+    dos2unix \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -24,6 +25,9 @@ RUN playwright install-deps chromium
 
 COPY . .
 
-RUN chmod +x /app/scripts/start_celery.sh
+# Fix CRLF issue automatically
+RUN dos2unix /app/scripts/*.sh
 
-CMD ["/bin/bash", "/app/scripts/start_celery.sh"]
+RUN chmod +x /app/scripts/*.sh
+
+CMD ["/bin/bash", "-c", "sed -i 's/\\r//' /app/scripts/start_celery.sh && bash /app/scripts/start_celery.sh"]

@@ -11,6 +11,7 @@ RUN echo "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99-ignore
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    dos2unix \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
@@ -20,12 +21,11 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
+RUN dos2unix /app/scripts/*.sh
+RUN chmod +x /app/scripts/*.sh
 
 ENV PYTHONPATH=/app:$PYTHONPATH
 
-
 EXPOSE 8001
 
-RUN chmod +x /app/scripts/wait_and_migrate.sh
-
-CMD ["/bin/bash", "/app/scripts/wait_and_migrate.sh"]
+CMD ["/bin/bash", "-c", "sed -i 's/\\r//' /app/scripts/wait_and_migrate.sh && bash /app/scripts/wait_and_migrate.sh"]

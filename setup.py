@@ -232,7 +232,9 @@ def step_setup_frontend():
 
     if _ask("Install frontend npm dependencies? (Node.js/npm)"):
         info("Running npm install in frontend/…")
-        _run(["npm", "install"], cwd="frontend")
+        # _run(["npm", "install"], cwd="frontend")
+        npm_cmd = "npm.cmd" if IS_WINDOWS else "npm"
+        _run([npm_cmd, "install"], cwd="frontend")
         ok("Frontend dependencies installed")
     else:
         warn("Skipped. Run manually later: cd frontend && npm install")
