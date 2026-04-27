@@ -31,7 +31,6 @@ An intelligent job discovery platform powered by AI agents that finds, matches, 
 
 ```bash
 git clone <repo>
-cd agentic_job_finder
 python setup.py
 ```
 
