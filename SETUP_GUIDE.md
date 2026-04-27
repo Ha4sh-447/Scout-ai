@@ -39,7 +39,6 @@ Prints a dependency table (Python, pip, Docker, Node/npm, Git) and exits — not
 | 7 | Install frontend npm dependencies *(optional — asked)* |
 | 8 | Start Docker services (`docker compose up -d`) *(optional — asked)* |
 | 9 | Run Alembic database migrations *(optional — asked)* |
-| 10 | Run preflight checks (`scripts/preflight.py`) |
 
 ---
 
@@ -72,8 +71,6 @@ docker compose up -d
 # 8. Run migrations
 cd db/migrations && alembic upgrade head && cd ../..
 
-# 9. Run preflight checks
-python scripts/preflight.py
 ```
 
 ---
