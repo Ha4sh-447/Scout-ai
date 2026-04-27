@@ -2,6 +2,7 @@
 .env
 .python-version
 .agents
+.temp_wheels_test/
 
 # Python cache
 __pycache__/
