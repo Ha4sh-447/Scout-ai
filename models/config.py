@@ -68,6 +68,7 @@ class ResumeMatchingConfig(BaseModel):
         description="Minimum number of high-scoring chunks to boost confidence in resume selection",
     )
 
+    # Resume reranking
     full_resume_weight: float = Field(
         default=0.35, description="Contribution of full resume score to final score"
     )

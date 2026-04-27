@@ -30,7 +30,8 @@ An intelligent job discovery platform powered by AI agents that finds, matches, 
 ### Setup (All Platforms)
 
 ```bash
-git clone <repo>
+git clone https://github.com/Ha4sh-447/Scout-ai.git
+cd Scout-ai
 python setup.py
 ```
 
@@ -298,7 +299,7 @@ Why keep both:
 | Issue | Solution |
 |-------|----------|
 | **Docker services fail to start** | Check logs: `docker-compose logs` <br> Ensure ports 5432, 6379, 6333 are free |
-| **LinkedIn auth timeout** | Run from project root: `cd /path/to/agentic_job_finder` <br> Increase timeout: `--timeout 120` |
+| **LinkedIn auth timeout** | Run from project root: `cd /path/to/Scout-ai` <br> Increase timeout: `--timeout 120` |
 | **Emails not sending** | Verify Gmail 2FA enabled <br> Check app password is correct (no spaces) |
 | **Jobs not matching** | Confirm resume uploaded and processed <br> Check Qdrant: `curl http://localhost:6333/health` |
 | **Pipeline slow/stuck** | Check Celery worker: `docker-compose logs job_finder_celery` <br> Monitor resources: `docker stats` |

@@ -142,7 +142,6 @@ def _is_blocked_candidate_url(base_url: str, href: str | None) -> bool:
 
     base_host = (urlparse(base_url).hostname or "").lower()
     if "internshala.com" in base_host:
-        # Internshala listing cards consistently point to internship/job detail pages.
         return not ("/internship/detail/" in href_l or "/job/detail/" in href_l)
 
     return False
@@ -202,6 +201,7 @@ async def scrape_generic_listing(
         await page.wait_for_timeout(3000)
         await _dismiss_listing_popups(page)
 
+        # Scroll once to trigger lazy-loaded cards on infinite-scroll portals.
         try:
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             await page.wait_for_timeout(1000)

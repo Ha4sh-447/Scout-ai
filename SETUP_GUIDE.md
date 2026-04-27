@@ -7,8 +7,8 @@
 ## 🚀 Quick Start
 
 ```bash
-git clone <repo-url>
-cd agentic_job_finder
+git clone https://github.com/Ha4sh-447/Scout-ai.git
+cd Scout-ai
 python setup.py        # python3 on Linux/macOS if needed
 ```
 
@@ -47,7 +47,7 @@ Prints a dependency table (Python, pip, Docker, Node/npm, Git) and exits — not
 
 ```bash
 # 1. Clone and enter the project
-git clone <repo-url> && cd agentic_job_finder
+git clone https://github.com/Ha4sh-447/Scout-ai.git && cd Scout-ai
 
 # 2. Copy environment file and fill in your keys
 cp .env.example .env

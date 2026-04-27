@@ -10,6 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN echo "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99-ignore-valid-until
 
+# Install basic system tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libssl-dev \
@@ -17,17 +18,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy requirements
 COPY requirements.txt .
 
+# Install Python dependencies
 RUN pip install -r requirements.txt
 
+# Install Playwright OS dependencies, but not the browser binary.
 RUN playwright install-deps chromium
 
+# Copy application code
 COPY . .
 
 # Fix CRLF issue automatically
 RUN dos2unix /app/scripts/*.sh
-
 RUN chmod +x /app/scripts/*.sh
-
-CMD ["/bin/bash", "-c", "sed -i 's/\\r//' /app/scripts/start_celery.sh && bash /app/scripts/start_celery.sh"]
+CMD ["/bin/bash", "/app/scripts/start_celery.sh"]

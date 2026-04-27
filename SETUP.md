@@ -36,7 +36,8 @@ If you prefer manual setup or need to troubleshoot:
 
 1. **Clone and setup environment**
    ```bash
-   cd /path/to/agentic_job_finder
+   git clone https://github.com/Ha4sh-447/Scout-ai.git
+   cd Scout-ai
    cp .env.example .env
    # Edit .env with your configuration
    ```

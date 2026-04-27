@@ -142,7 +142,6 @@ def _score_resume_chunks_for_vote(
 
     weighted_avg = total_score / total_weight if total_weight > 0 else 0.0
 
-    # Vote bonus: prefer resumes that match across multiple chunks, not just one peak chunk.
     vote_bonus = 0.0
     if high_count >= cfg.min_high_chunks_for_boost:
         vote_bonus += min(0.06, 0.02 * (high_count - cfg.min_high_chunks_for_boost + 1))
@@ -359,7 +358,6 @@ async def _chunk_score_job(
 
     logger.info(f"[stage_1] Job: {job.title} @ {job.company} -> Base Chunk Score: {chunk_score:.4f} (Resume: {winning_resume_id})")
 
-    # Hardening: Penalize navigation-like titles
     title_words = (job.title or "").lower().split()
     if len(title_words) == 1 and title_words[0] in _NAV_KEYWORDS:
         logger.info(f"[scoring] CRITICAL PENALTY: Navigation-like title detected ('{job.title}')")
@@ -367,7 +365,6 @@ async def _chunk_score_job(
     elif len(title_words) < 2:
         final_score *= 0.7  # relaxed from 0.5
         
-    # Be more lenient with descriptions, especially for generic scrapers that only get snippets
     _DEDICATED_PLATFORMS = {"linkedin", "indeed", "glassdoor", "wellfound", "reddit"}
     is_dedicated = job.source_platform in _DEDICATED_PLATFORMS
     

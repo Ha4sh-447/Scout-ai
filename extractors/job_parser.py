@@ -172,7 +172,6 @@ async def _parse_chunk(
 
             for item in data:
                 if not item:
-                    # Skip null items (as instructed to the LLM for non-jobs)
                     continue
                 try:
                     schema = _ParsedJobSchema(**item)
