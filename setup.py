@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 try:
     import colorama
@@ -76,6 +77,18 @@ def _ask(question: str) -> bool:
         if ans in ("n", "no"):
             return False
         print("  Please enter y or n.")
+
+
+def _ask_choice(question: str, choices: dict[str, str]) -> str:
+    """Ask user to pick one choice and return the choice key."""
+    while True:
+        print(f"\n{_c('yellow', question)}")
+        for key, label in choices.items():
+            print(f"  {key}) {label}")
+        ans = input("Select option: ").strip().lower()
+        if ans in choices:
+            return ans
+        print("  Invalid selection. Please choose one of:", ", ".join(choices.keys()))
 
 
 def _version_of(cmd: str) -> str:
@@ -167,6 +180,178 @@ def step_setup_env():
         print("  QDRANT_URL, REDIS_URL, CELERY_BROKER_URL, EMAIL_SENDER, EMAIL_PASSWORD")
 
 
+def step_choose_setup_mode() -> str:
+    """Ask user whether to use Docker or local services."""
+    header("Step 2.5 · Choose Setup Mode")
+    choice = _ask_choice(
+        "How do you want to run backend services?",
+        {
+            "1": "Docker (recommended)",
+            "2": "Local services on this machine",
+        },
+    )
+    mode = "docker" if choice == "1" else "local"
+    ok(f"Selected setup mode: {mode}")
+    return mode
+
+
+def _read_env_vars(path: Path) -> dict[str, str]:
+    data: dict[str, str] = {}
+    if not path.exists():
+        return data
+
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            data[key] = value
+    return data
+
+
+def _is_placeholder_value(value: str) -> bool:
+    if not value:
+        return True
+    lowered = value.lower()
+    placeholder_markers = (
+        "your_",
+        "replace_",
+        "example",
+        "changeme",
+        "change_me",
+        "placeholder",
+        "optional_api_key",
+    )
+    return any(marker in lowered for marker in placeholder_markers)
+
+
+def step_validate_env(setup_mode: str) -> bool:
+    """Validate .env keys and mode-specific connection values. Returns False on validation errors."""
+    header("Step 2.6 · Validate Environment")
+    env_path = Path(".env")
+    example_path = Path(".env.example")
+
+    if not env_path.exists():
+        error(".env file is missing")
+        print("  Create .env from .env.example first, then re-run setup.py")
+        return False
+
+    env_vars = _read_env_vars(env_path)
+    example_vars = _read_env_vars(example_path)
+    frontend_env_path = Path("frontend/.env")
+    frontend_env_local_path = Path("frontend/.env.local")
+    frontend_env_vars = _read_env_vars(frontend_env_path)
+    if not frontend_env_vars and frontend_env_local_path.exists():
+        frontend_env_vars = _read_env_vars(frontend_env_local_path)
+
+    optional_keys = {
+        "QDRANT_API_KEY",  # optional for local/default docker Qdrant
+        "QDRANT_URL_CLOUD",
+        "QDRANT_API_KEY_CLOUD",
+        "GROQ_API_KEY",
+        "LANGCHAIN_API_KEY",
+    }
+
+    frontend_only_keys = {
+        "AUTH_SECRET",
+        "AUTH_TRUST_HOST",
+        "NEXTAUTH_URL",
+        "NEXT_PUBLIC_API_URL",
+    }
+
+    required_keys = [
+        k for k in example_vars.keys()
+        if k not in optional_keys and k not in frontend_only_keys
+    ]
+    frontend_required_keys = ["AUTH_SECRET", "NEXT_PUBLIC_API_URL"]
+
+    missing: list[str] = []
+    placeholder: list[str] = []
+
+    for key in required_keys:
+        value = env_vars.get(key, "").strip()
+        if not value:
+            missing.append(key)
+            continue
+        if _is_placeholder_value(value):
+            placeholder.append(key)
+
+    mode_errors: list[str] = []
+    frontend_missing: list[str] = []
+    frontend_placeholder: list[str] = []
+    db_url = env_vars.get("DATABASE_URL", "")
+    redis_url = env_vars.get("REDIS_URL", "")
+    qdrant_url = env_vars.get("QDRANT_URL", "")
+
+    for key in frontend_required_keys:
+        value = frontend_env_vars.get(key, "").strip()
+        if not value:
+            frontend_missing.append(key)
+            continue
+        if _is_placeholder_value(value):
+            frontend_placeholder.append(key)
+
+    if db_url:
+        parsed = urlparse(db_url)
+        db_host = parsed.hostname or ""
+        if setup_mode == "docker":
+            if db_host not in {"db", "localhost", "127.0.0.1"}:
+                mode_errors.append(
+                    "DATABASE_URL host should be 'db' for docker setup (or localhost for host-run migrations)."
+                )
+        else:
+            if db_host == "db":
+                mode_errors.append(
+                    "DATABASE_URL in .env uses docker host 'db'."
+                )
+
+    if setup_mode == "local":
+        if "redis://redis:" in redis_url:
+            mode_errors.append("REDIS_URL in .env uses docker host 'redis'.")
+        if "http://qdrant:" in qdrant_url:
+            mode_errors.append("QDRANT_URL in .env uses docker host 'qdrant'.")
+
+    if not missing and not placeholder and not mode_errors and not frontend_missing and not frontend_placeholder:
+        ok("Environment validation passed")
+        return True
+
+    error("Environment validation failed. Please fix these issues and re-run setup.py")
+    if missing:
+        print("\n  Missing keys:")
+        for key in missing:
+            print(f"    - {key}")
+    if placeholder:
+        print("\n  Keys still using placeholder/example values:")
+        for key in placeholder:
+            print(f"    - {key}")
+
+    if frontend_missing or frontend_placeholder:
+        print("\n  Frontend environment issues:")
+        location = "frontend/.env"
+        if not frontend_env_path.exists() and frontend_env_local_path.exists():
+            location = "frontend/.env.local"
+        if frontend_missing:
+            print(f"    File: {location}")
+            print("    Missing keys:")
+            for key in frontend_missing:
+                print(f"      - {key}")
+        if frontend_placeholder:
+            print(f"    File: {location}")
+            print("    Keys still using placeholder/example values:")
+            for key in frontend_placeholder:
+                print(f"      - {key}")
+
+    if mode_errors:
+        print("\n  Setup-mode mismatches:")
+        for msg in mode_errors:
+            print(f"    - {msg}")
+
+    return False
+
+
 def step_setup_venv():
     """Create .venv and install dependencies."""
     header("Step 3 · Python Virtual Environment")
@@ -256,8 +441,8 @@ def step_clone_mcp_qdrant():
         ok("mcp-server-qdrant cloned")
 
 
-def step_docker_services():
-    """Start Docker services."""
+def step_docker_services() -> bool:
+    """Start Docker services. Returns True when docker services were started."""
     header("Step 8 · Docker Services")
 
     compose_cmd: list[str] | None = None
@@ -271,7 +456,7 @@ def step_docker_services():
 
     if compose_cmd is None:
         warn("Docker Compose not found — skipping service startup")
-        return
+        return False
 
     if not _docker_daemon_available():
         error("Docker daemon is not reachable.")
@@ -285,7 +470,7 @@ def step_docker_services():
         else:
             print("  1) Start Docker Desktop")
             print("  2) Verify: docker info")
-        return
+        return False
 
     if _ask("Start Docker services (PostgreSQL, Redis, Qdrant, Celery)?"):
         info("Starting services with docker compose up -d…")
@@ -295,6 +480,7 @@ def step_docker_services():
             info("Waiting 10 seconds for services to initialise…")
             import time
             time.sleep(10)
+            return True
         except RuntimeError as e:
             error(str(e))
             print("  If you see 'Cannot connect to the Docker daemon', start Docker first:")
@@ -302,11 +488,67 @@ def step_docker_services():
                 print("  sudo systemctl start docker")
             else:
                 print("  Start Docker Desktop")
+            return False
     else:
         warn("Skipped. Run manually later: docker compose up -d")
+        return False
 
 
-def step_run_migrations():
+def step_local_services_setup():
+    """Guide users through non-Docker local services setup."""
+    header("Step 8.5 · Local Services (No Docker)")
+    info("Docker was skipped. Configuring for local services on this machine.")
+    print("  Recommended for local setup:")
+    print("    1) PostgreSQL running on localhost:5432")
+    print("    2) Redis running on localhost:6379")
+    print("    3) Qdrant running on localhost:6333")
+
+    env_path = Path(".env")
+    if env_path.exists():
+        lines = env_path.read_text().splitlines()
+        db_line = next((ln for ln in lines if ln.startswith("DATABASE_URL=")), "")
+        redis_line = next((ln for ln in lines if ln.startswith("REDIS_URL=")), "")
+        qdrant_line = next((ln for ln in lines if ln.startswith("QDRANT_URL=")), "")
+
+        if db_line and "@db:" in db_line:
+            warn("DATABASE_URL is using docker host 'db'. For local setup use localhost.")
+            print("  Example:")
+            print("  DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:5432/<db>")
+        elif db_line:
+            ok("DATABASE_URL looks local-friendly")
+        else:
+            warn("DATABASE_URL missing in .env")
+
+        if redis_line and "redis://redis:" in redis_line:
+            warn("REDIS_URL is using docker host 'redis'. For local setup use localhost.")
+            print("  Example: REDIS_URL=redis://localhost:6379/0")
+        elif redis_line:
+            ok("REDIS_URL looks local-friendly")
+        else:
+            warn("REDIS_URL missing in .env")
+
+        if qdrant_line and "http://qdrant:" in qdrant_line:
+            warn("QDRANT_URL is using docker host 'qdrant'. For local setup use localhost.")
+            print("  Example: QDRANT_URL=http://localhost:6333")
+        elif qdrant_line:
+            ok("QDRANT_URL looks local-friendly")
+        else:
+            warn("QDRANT_URL missing in .env")
+
+    print("\n  Install/start local services as needed:")
+    if IS_LINUX:
+        print("    PostgreSQL: sudo apt install postgresql && sudo systemctl start postgresql")
+        print("    Redis:      sudo apt install redis-server && sudo systemctl start redis-server")
+    elif IS_MACOS:
+        print("    PostgreSQL: brew install postgresql@16 && brew services start postgresql@16")
+        print("    Redis:      brew install redis && brew services start redis")
+    else:
+        print("    PostgreSQL: install via official installer and start the service")
+        print("    Redis:      use Redis for Windows-compatible setup or WSL")
+    print("    Qdrant:     run binary locally or use: docker run -p 6333:6333 qdrant/qdrant")
+
+
+def step_run_migrations(setup_mode: str):
     """Run Alembic database migrations."""
     header("Step 9 · Database Migrations")
 
@@ -329,23 +571,59 @@ def step_run_migrations():
     else:
         alembic_cmd = str(alembic)
 
+    compose_cmd: list[str] | None = None
+    if setup_mode == "docker" and _cmd_exists("docker"):
+        try:
+            _run(["docker", "compose", "version"], check=True, capture=True)
+            compose_cmd = ["docker", "compose"]
+        except Exception:
+            if _cmd_exists("docker-compose"):
+                compose_cmd = ["docker-compose"]
+
     if _ask("Run database migrations (Alembic)?"):
-        host_db_url = db_url.replace("@db:", "@localhost:")
+        if setup_mode == "docker":
+            host_db_url = db_url.replace("@db:", "@localhost:")
+        else:
+            host_db_url = db_url
+
         env = {**os.environ, "DATABASE_URL": host_db_url, "PYTHONPATH": str(ROOT_DIR)}
         try:
             _run([alembic_cmd, "upgrade", "head"], cwd="db/migrations", env=env)
             ok("Database migrations applied")
         except RuntimeError:
+            if setup_mode != "docker":
+                error("Local migrations failed — is local PostgreSQL running on localhost?")
+                print("  Verify your DATABASE_URL in .env")
+                print("  Then run: cd db/migrations && alembic upgrade head")
+                return
+
+            warn("Host migration failed. Trying inside Docker API container…")
+            if compose_cmd is not None:
+                try:
+                    _run(compose_cmd + ["exec", "-T", "api", "alembic", "upgrade", "head"])
+                    ok("Database migrations applied (inside Docker API container)")
+                    return
+                except RuntimeError:
+                    warn("Docker migration failed. Recreating db/api containers and retrying once…")
+                    try:
+                        _run(compose_cmd + ["up", "-d", "--force-recreate", "db", "api"])
+                        _run(compose_cmd + ["exec", "-T", "api", "alembic", "upgrade", "head"])
+                        ok("Database migrations applied after container recreation")
+                        return
+                    except RuntimeError:
+                        pass
+
             error("Migrations failed — is the database running?")
             print("  Verify: docker compose ps")
-            print("  Then run: cd db/migrations && alembic upgrade head")
+            print("  Try host run:   cd db/migrations && alembic upgrade head")
+            print("  Try docker run: docker compose exec -T api alembic upgrade head")
     else:
         warn("Skipped. Run manually: cd db/migrations && alembic upgrade head")
 
 
 
 
-def print_summary():
+def print_summary(setup_mode: str, docker_started: bool):
     activate = (
         r".venv\Scripts\activate" if IS_WINDOWS else "source .venv/bin/activate"
     )
@@ -359,7 +637,13 @@ def print_summary():
     print(_c("green", f"╚{'═'*width}╝"))
     print()
     print(_c("yellow", "  Next steps:"))
-    print(f"    1. Start services:   {_c('blue', 'docker compose up -d')}")
+    if setup_mode == "docker":
+        if docker_started:
+            print(f"    1. Services:         {_c('blue', 'already started via docker compose')}")
+        else:
+            print(f"    1. Start services:   {_c('blue', 'docker compose up -d')}")
+    else:
+        print(f"    1. Start services:   {_c('blue', 'start local PostgreSQL/Redis/Qdrant services')}")
     print(f"    2. Activate venv:    {_c('blue', activate)}")
     print(f"    3. Start frontend:   {_c('blue', 'cd frontend && npm run dev')}")
     print(f"    4. Access dashboard: {_c('blue', 'http://localhost:3000')}")
@@ -398,15 +682,24 @@ def main():
         sys.exit(1)
 
     step_setup_env()
+    setup_mode = step_choose_setup_mode()
+    if not step_validate_env(setup_mode):
+        sys.exit(1)
+
     step_setup_venv()
     step_install_dependencies()
     step_setup_playwright()
     step_create_directories()
     step_setup_frontend()
     step_clone_mcp_qdrant()
-    step_docker_services()
-    step_run_migrations()
-    print_summary()
+    docker_started = False
+    if setup_mode == "docker":
+        docker_started = step_docker_services()
+    else:
+        step_local_services_setup()
+
+    step_run_migrations(setup_mode)
+    print_summary(setup_mode, docker_started)
 
 
 if __name__ == "__main__":

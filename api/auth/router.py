@@ -22,7 +22,22 @@ router = APIRouter(prefix='/auth', tags=['auth'])
 @router.post("/register" , response_model=TokenResponse, status_code=HTTP_201_CREATED)
 async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     existing_user = (await db.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
+
     if existing_user:
+        if existing_user.hashed_password == "oauth_user":
+            existing_user.hashed_password = hash_password(body.password)
+            if not existing_user.is_active:
+                existing_user.is_active = True
+
+            await db.commit()
+            await db.refresh(existing_user)
+
+            return TokenResponse(
+                    access_token=create_access_token(existing_user.id),
+                    user_id=existing_user.id,
+                    email=existing_user.email,
+                    )
+
         raise HTTPException(status_code=400, detail="Email already registered")
 
     user = User(email = body.email, hashed_password=hash_password(body.password))

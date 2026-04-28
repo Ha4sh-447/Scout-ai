@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import os
 from jose import jwt, JWTError
 from passlib.context import CryptContext
+from passlib.exc import UnknownHashError
 
 
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "abcdefghijk")
@@ -14,7 +15,10 @@ def hash_password(password: str):
     return pwd_context.hash(password)
 
 def verify_password(plain: str, hashed: str):
-    return pwd_context.verify(plain, hashed)
+    try:
+        return pwd_context.verify(plain, hashed)
+    except UnknownHashError:
+        return False
 
 def create_access_token(user_id: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)

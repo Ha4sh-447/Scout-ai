@@ -1,11 +1,45 @@
 import NextAuth from "next-auth";
-import GoogleProvider from "next-auth/providers/google";
+import CredentialsProvider from "next-auth/providers/credentials";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
 export const authOptions = {
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID || "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+    CredentialsProvider({
+      name: "Credentials",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials: any) {
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error("Email and password are required");
+        }
+
+        try {
+          const res = await fetch(`${API_URL}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: credentials.email,
+              password: credentials.password
+            }),
+          });
+
+          if (!res.ok) {
+            throw new Error("Invalid email or password");
+          }
+
+          const data = await res.json();
+          return {
+            id: data.user_id,
+            email: data.email,
+            accessToken: data.access_token,
+          };
+        } catch (error: any) {
+          throw new Error(error.message || "Authentication failed");
+        }
+      }
     }),
   ],
   session: { strategy: "jwt" as const },
@@ -13,34 +47,16 @@ export const authOptions = {
     signIn: "/auth/login",
   },
   callbacks: {
-    async jwt({ token, user, account }: any) {
-      if (account?.provider === "google" && user) {
-        try {
-          const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
-          const res = await fetch(`${API_URL}/auth/sync`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: user.email,
-              id_token: account.id_token,
-              provider: account.provider
-            }),
-          });
-          
-          if (res.ok) {
-            const data = await res.json();
-            token.accessToken = data.access_token;
-            token.backendId = data.user_id;
-          }
-        } catch (error) {
-          console.error("Error during social sync in JWT:", error);
-        }
+    async jwt({ token, user }: any) {
+      if (user) {
+        token.accessToken = user.accessToken;
+        token.sub = user.id;
       }
       return token;
     },
     async session({ session, token }: any) {
       if (token && session.user) {
-        session.user.id = token.backendId || token.sub;
+        session.user.id = token.sub;
         session.user.accessToken = token.accessToken;
       }
       return session;
