@@ -15,6 +15,7 @@ An intelligent job discovery platform powered by AI agents that finds, matches, 
 - 📧 **Notifies** you via email with job digests
 - ⏰ **Schedules** recurring pipeline runs automatically
 
+>**Platform support note:** the project currently works with LinkedIn, Indeed, Glassdoor, and custom job URLs. A few other platforms are still on the roadmap, so support for them may be added in a future update.
 ---
 
 ## 🚀 Quick Start
