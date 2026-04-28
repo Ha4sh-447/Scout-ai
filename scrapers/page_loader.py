@@ -29,8 +29,6 @@ def detect_platform(url: str) -> str:
         return "reddit"
     if "glassdoor.com" in url or "glassdoor.co" in url:
         return "glassdoor"
-    if "wellfound.com" in url:
-        return "wellfound"
 
     try:
         host = (urlparse(url).hostname or "").lower()
@@ -207,12 +205,6 @@ async def load_job_pages(
                 url = f"https://www.glassdoor.co.in/Job/jobs.htm?sc.keyword={encoded_q}"
                 if location: url += f"&location={quote_plus(location)}"
                 generated_urls.append(url)
-            if "wellfound" in platforms:
-                def slugify(text: str) -> str:
-                    return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
-                role_slug = slugify(q)
-                loc_slug = slugify(location or "india")
-                generated_urls.append(f"https://wellfound.com/role/l/{role_slug}/{loc_slug}")
         urls = generated_urls
 
     for i, url in enumerate(urls):

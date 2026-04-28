@@ -24,12 +24,12 @@ async def trigger_browser_authentication(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Triggers the browser authentication helper to save LinkedIn/Wellfound session.
+    Triggers the browser authentication helper to save LinkedIn session.
     
     This will:
     1. Check if a session already exists (skips if found)
     2. Open a browser window on the host machine
-    3. Let user log into LinkedIn and/or Wellfound
+    3. Let user log into LinkedIn and/or Indeed
     4. Save the browser session to the database for future pipelines
     5. User can then scrape personalized results using saved session
     
@@ -38,7 +38,7 @@ async def trigger_browser_authentication(
     """
     try:
         # Validate platforms
-        if not all(p in ["linkedin", "wellfound", "indeed"] for p in request.platforms):
+        if not all(p in ["linkedin", "indeed"] for p in request.platforms):
             raise HTTPException(status_code=400, detail="Invalid platform(s) requested")
 
         # Session may exist, but we allow re-triggering to "Sync" or update
@@ -86,7 +86,7 @@ async def get_authentication_status(
 ):
     """
     Check if the user has a saved browser session.
-    Returns status indicating if LinkedIn/Wellfound sessions are available.
+    Returns status indicating if LinkedIn/Indeed sessions are available.
     """
     result = await db.execute(
         select(UserSettings).where(UserSettings.user_id == current_user.id)
@@ -103,7 +103,6 @@ async def get_authentication_status(
     # Check what's in the session
     session = settings.browser_session
     has_linkedin = False
-    has_wellfound = False
     has_indeed = False
     
     if isinstance(session, dict):
@@ -112,15 +111,12 @@ async def get_authentication_status(
             domain = cookie.get("domain", "")
             if "linkedin" in domain.lower():
                 has_linkedin = True
-            elif "wellfound" in domain.lower():
-                has_wellfound = True
             elif "indeed" in domain.lower():
                 has_indeed = True
     
     return {
-        "authenticated": has_linkedin or has_wellfound or has_indeed,
+        "authenticated": has_linkedin or has_indeed,
         "has_linkedin": has_linkedin,
-        "has_wellfound": has_wellfound,
         "has_indeed": has_indeed,
         "message": "Browser session is active",
         "saved_at": settings.updated_at.isoformat() if settings.updated_at else None
@@ -226,14 +222,14 @@ async def save_search_links(
 ):
     """
     Save search URLs permanently for automated scheduled pipeline runs.
-    Accepts all platform types. LinkedIn/Wellfound links benefit from 
+    Accepts all platform types. LinkedIn links benefit from 
     authenticated browser sessions for personalized results.
     """
     if not request.links:
         raise HTTPException(status_code=400, detail="No links provided")
 
     saved_count = 0
-    linkedin_wellfound_count = 0
+    linkedin_indeed_count = 0
     other_platforms = []
 
     for url in request.links:
@@ -260,8 +256,8 @@ async def save_search_links(
             saved_count += 1
             
             # Track which platforms were saved
-            if platform.lower() in ["linkedin", "wellfound", "indeed"]:
-                linkedin_wellfound_indeed_count += 1
+            if platform.lower() in ["linkedin", "indeed"]:
+                linkedin_indeed_count += 1
             else:
                 other_platforms.append(platform.lower() if platform else "generic")
 
@@ -272,7 +268,7 @@ async def save_search_links(
     
     logger.info(
         f"[save-search-links] User {current_user.id}: "
-        f"saved {saved_count} links ({linkedin_wellfound_count} LinkedIn/Wellfound, {len(unique_other_platforms)} other platforms)"
+        f"saved {saved_count} links ({linkedin_indeed_count} LinkedIn/Indeed, {len(unique_other_platforms)} other platforms)"
     )
 
     message = f"Saved {saved_count} search link"
@@ -280,10 +276,10 @@ async def save_search_links(
         message += "s"
     message += " for automated runs."
     
-    if linkedin_wellfound_count > 0 and len(unique_other_platforms) > 0:
-        message += f" LinkedIn/Wellfound links will use your authenticated session."
+    if linkedin_indeed_count > 0 and len(unique_other_platforms) > 0:
+        message += f" LinkedIn/Indeed links will use your authenticated session."
     elif len(unique_other_platforms) > 0:
-        message += f" Authenticate LinkedIn/Wellfound to enable personalized results."
+        message += f" Authenticate LinkedIn/Indeed to enable personalized results."
 
     return SaveSearchLinksResponse(
         message=message,

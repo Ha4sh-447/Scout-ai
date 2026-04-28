@@ -51,7 +51,7 @@ export default function HomePage() {
               </h1>
 
               <p className="text-slate-400 text-lg md:text-xl max-w-[600px] mx-auto mb-10 leading-relaxed">
-                Scout AI scans LinkedIn, Wellfound, and more — matching your resume against live listings, ranking them, 
+                Scout AI scans LinkedIn, Indeed, and more — matching your resume against live listings, ranking them, 
                 and sending you a tailored job digest every day.
               </p>
 
@@ -224,7 +224,7 @@ const FEATURES = [
   {
     icon: Search,
     title: "Multi-Platform Scraping",
-    desc: "Automatically scrapes LinkedIn, Indeed, Wellfound, Glassdoor, and Reddit based on your saved search URLs.",
+    desc: "Automatically scrapes LinkedIn, Indeed, and Glassdoor based on your saved search URLs.",
     highlight: true,
   },
   {
@@ -254,7 +254,7 @@ const FEATURES = [
   {
     icon: Globe,
     title: "Authenticated Scraping",
-    desc: "Save your LinkedIn/Wellfound browser session to unlock personalized job feeds and bypass guest-mode limits.",
+    desc: "Save your LinkedIn browser session to unlock personalized job feeds and bypass guest-mode limits.",
     highlight: false,
   },
   {
@@ -285,7 +285,7 @@ const HOW_STEPS = [
   },
   {
     title: "Add your search URLs",
-    desc: "Paste LinkedIn, Indeed, or Wellfound search URLs into 'Saved Search URLs'. These are the pages Scout will scan on every run.",
+    desc: "Paste LinkedIn or Indeed search URLs into 'Saved Search URLs'. These are the pages Scout will scan on every run.",
     tip: "Use filtered search URLs (location, experience) for more precise results.",
   },
   {

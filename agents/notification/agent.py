@@ -138,7 +138,6 @@ def _build_html(jobs: list[MatchedJob], run_label: str) -> str:
   .footer{{text-align:center;padding:32px 24px;font-size:12px;color:#94a3b8;line-height:1.5;}}
   .platform-badge{{font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;text-transform:uppercase;color:#ffffff;display:inline-block;}}
   .platform-linkedin{{background-color:#0077b5;}}
-  .platform-wellfound{{background-color:#fa5252;}}
   .platform-indeed{{background-color:#2164f3;}}
   .platform-generic{{background-color:#64748b;}}
   

@@ -46,7 +46,7 @@ export default function Dashboard() {
   const [showSaveLinksPrompt, setShowSaveLinksPrompt] = useState(false);
   const [authStatus, setAuthStatus] = useState<any>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["linkedin", "wellfound", "indeed"]);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["linkedin", "indeed"]);
   
   const [enableScheduler, setEnableScheduler] = useState(false);
   const [schedulerInterval, setSchedulerInterval] = useState(3);
@@ -146,12 +146,12 @@ export default function Dashboard() {
       console.log("[Dashboard] experience:", experience);
       
       if (urlList.length > 0) {
-        const linkedinOrWellfoundUrls = urlList.filter(u => 
-          u.toLowerCase().includes("linkedin") || u.toLowerCase().includes("wellfound")
+        const linkedinOrIndeedUrls = urlList.filter(u => 
+          u.toLowerCase().includes("linkedin") || u.toLowerCase().includes("indeed")
         );
-        if (linkedinOrWellfoundUrls.length > 0) {
+        if (linkedinOrIndeedUrls.length > 0) {
           try {
-            await saveSearchLinks(linkedinOrWellfoundUrls, token);
+            await saveSearchLinks(linkedinOrIndeedUrls, token);
           } catch (err) {
             console.warn("Could not save search links:", err);
           }
@@ -485,14 +485,14 @@ export default function Dashboard() {
                        done: savedSearchLinks.length > 0,
                        step: "02",
                        title: "Add Search URLs",
-                       desc: "Paste filtered LinkedIn, Wellfound, or Indeed search URLs. Scout will scrape these on every run.",
+                       desc: "Paste filtered LinkedIn or Indeed search URLs. Scout will scrape these on every run.",
                        tip: 'Use pre-filtered URLs with location/experience — e.g. linkedin.com/jobs/search/?keywords=AI+Engineer',
                        action: { label: "Manage URLs →", onClick: () => setActiveTab("savedlinks") },
                      },
                      {
                        done: authStatus?.authenticated,
                        step: "03",
-                       title: "Authenticate LinkedIn / Wellfound",
+                       title: "Authenticate LinkedIn / Indeed",
                        desc: "Save your browser session cookie to access personalized job feeds and bypass guest rate limits.",
                        tip: "Open Preferences and paste your li_at cookie. One-time setup.",
                        action: { label: "Open Preferences →", onClick: handleOpenSettings },
@@ -573,7 +573,7 @@ export default function Dashboard() {
                  <h3 className="text-white font-bold mb-5">System Status</h3>
                  <div className="space-y-3">
                    {[
-                     { label: "Browser Authentication", sub: authStatus?.authenticated ? `LinkedIn ${authStatus?.has_linkedin ? "✓" : "✗"}  Wellfound ${authStatus?.has_wellfound ? "✓" : "✗"}` : "Not authenticated", ok: authStatus?.authenticated },
+                     { label: "Browser Authentication", sub: authStatus?.authenticated ? `LinkedIn ${authStatus?.has_linkedin ? "✓" : "✗"}  Indeed ${authStatus?.has_indeed ? "✓" : "✗"}` : "Not authenticated", ok: authStatus?.authenticated },
                      { label: "Resume", sub: uploadedResumes.length > 0 ? `${uploadedResumes.length} resume${uploadedResumes.length > 1 ? "s" : ""} uploaded` : "No resumes uploaded", ok: uploadedResumes.length > 0 },
                      { label: "Search URLs", sub: savedSearchLinks.length > 0 ? `${savedSearchLinks.length} URL${savedSearchLinks.length > 1 ? "s" : ""} saved` : "No URLs configured", ok: savedSearchLinks.length > 0 },
                      ...(runs.length > 0 ? [{ label: "Last Pipeline Run", sub: `${runs[0]?.status?.charAt(0).toUpperCase() + runs[0]?.status?.slice(1)} — ${new Date(runs[0]?.started_at).toLocaleDateString()}`, ok: runs[0]?.status === "done" }] : []),
@@ -747,7 +747,7 @@ export default function Dashboard() {
                  <div className="flex items-start justify-between">
                    <div>
                      <h3 className="text-xl font-bold text-white mb-2">Browser Session Authentication</h3>
-                     <p className="text-slate-400 text-sm">Log in to LinkedIn and Wellfound to enable personalized job scraping with saved session</p>
+                     <p className="text-slate-400 text-sm">Log in to LinkedIn and Indeed to enable personalized job scraping with saved session</p>
                    </div>
                    <div className="flex items-center gap-3">
                      {authStatus?.authenticated && (
@@ -779,7 +779,7 @@ export default function Dashboard() {
                    </div>
                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div 
                       onClick={() => {
                         setSelectedPlatforms(prev => 
@@ -799,27 +799,6 @@ export default function Dashboard() {
                         <span className="font-semibold text-white">LinkedIn</span>
                       </div>
                       <p className="text-xs text-slate-400">{authStatus?.has_linkedin ? 'Connected' : 'Click to select'}</p>
-                    </div>
-
-                    <div 
-                      onClick={() => {
-                        setSelectedPlatforms(prev => 
-                          prev.includes("wellfound") ? prev.filter(p => p !== "wellfound") : [...prev, "wellfound"]
-                        );
-                      }}
-                      className={`p-4 rounded-lg border-2 transition-all cursor-pointer hover:border-orange-500/50 ${selectedPlatforms.includes("wellfound") ? 'bg-orange-500/10 border-orange-500/30 shadow-lg shadow-orange-500/5' : 'bg-slate-900/50 border-slate-700'}`}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        {authStatus?.has_wellfound ? (
-                          <CheckCircle size={18} className="text-orange-400" />
-                        ) : selectedPlatforms.includes("wellfound") ? (
-                          <div className="w-[18px] h-[18px] border-2 border-orange-400 rounded-sm" />
-                        ) : (
-                          <Square size={18} className="text-slate-500" />
-                        )}
-                        <span className="font-semibold text-white">Wellfound</span>
-                      </div>
-                      <p className="text-xs text-slate-400">{authStatus?.has_wellfound ? 'Connected' : 'Click to select'}</p>
                     </div>
 
                     <div 
@@ -914,11 +893,11 @@ export default function Dashboard() {
                 <div className="glass p-8 rounded-3xl border border-slate-800 space-y-6">
                   <div>
                     <h3 className="text-xl font-bold text-white mb-2">Add Search URLs</h3>
-                   <p className="text-slate-400 text-sm">Paste job search URLs from any platform. LinkedIn/Wellfound links will use your authenticated session for personalized results.</p>
+                   <p className="text-slate-400 text-sm">Paste job search URLs from any platform. LinkedIn links will use your authenticated session for personalized results.</p>
                  </div>
                  
                  <textarea
-                   placeholder="Paste search URLs (one per line)&#10;e.g.,&#10;https://www.linkedin.com/jobs/search/?keywords=react&location=India&#10;https://wellfound.com/search?filters=roles:engineering&#10;https://www.indeed.com/jobs?q=python&l=remote"
+                   placeholder="Paste search URLs (one per line)&#10;e.g.,&#10;https://www.linkedin.com/jobs/search/?keywords=react&location=India&#10;https://www.indeed.com/jobs?q=python&l=remote"
                    value={customUrls}
                    onChange={(e) => setCustomUrls(e.target.value)}
                    className="w-full h-32 bg-slate-900 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-600 focus:border-emerald-500 focus:outline-none resize-none"
@@ -988,15 +967,15 @@ export default function Dashboard() {
                  <div className="glass p-8 rounded-3xl border border-dashed border-slate-700 flex flex-col items-center justify-center h-64 text-center">
                    <Globe size={48} className="text-slate-600 mb-4" />
                    <p className="text-slate-400 font-medium">No saved search URLs yet</p>
-                   <p className="text-slate-500 text-sm mt-2">Add LinkedIn or Wellfound search URLs above to automate your job searches</p>
+                   <p className="text-slate-500 text-sm mt-2">Add LinkedIn or Indeed search URLs above to automate your job searches</p>
                  </div>
                )}
 
                <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-6">
                  <h4 className="text-sm font-bold text-blue-400 mb-2">How It Works</h4>
                  <ul className="text-sm text-blue-300/80 space-y-1">
-                   <li>✓ Save search URLs from any job platform (LinkedIn, Wellfound, Indeed, etc.)</li>
-                   <li>✓ LinkedIn/Wellfound links use authenticated session for personalized results</li>
+                   <li>✓ Save search URLs from any job platform (LinkedIn, Indeed, etc.)</li>
+                   <li>✓ LinkedIn links use authenticated session for personalized results</li>
                    <li>✓ Saved URLs are scraped automatically on your schedule</li>
                    <li>✓ Results matched with your resume and ranked by relevance</li>
                    <li>✓ Top matches sent to you via email daily</li>
@@ -1275,7 +1254,6 @@ function JobCard({ id, resumeId, title, company, score, location, skills, time, 
     const p = platform?.toLowerCase() || "";
     if (p.includes("linkedin")) return "bg-blue-500/10 text-blue-400 border-blue-500/20";
     if (p.includes("indeed")) return "bg-purple-500/10 text-purple-400 border-purple-500/20";
-    if (p.includes("wellfound")) return "bg-orange-500/10 text-orange-400 border-orange-500/20";
     return "bg-slate-500/10 text-slate-400 border-slate-500/20";
   };
 

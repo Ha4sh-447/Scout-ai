@@ -1,6 +1,6 @@
 """
 Browser session authentication helper.
-Opens a browser for user to log into LinkedIn/Wellfound and saves the session.
+Opens a browser for user to log into LinkedIn and saves the session.
 """
 import asyncio
 import os
@@ -183,21 +183,6 @@ async def check_linkedin_authenticated(page):
         return False
 
 
-async def check_wellfound_authenticated(page):
-    """Check if user is authenticated on Wellfound."""
-    try:
-        await asyncio.sleep(1)
-        current_url = page.url
-        
-        # Check if we're past the login page
-        if "wellfound.com/login" not in current_url and "wellfound.com" in current_url:
-            logger.info(f"Wellfound navigation detected: {current_url}")
-            return True
-        
-        return False
-    except Exception as e:
-        logger.debug(f"Wellfound auth check error: {e}")
-        return False
 
 
 async def check_indeed_authenticated(page):
@@ -235,12 +220,12 @@ async def run(platforms: list = None, user_id: str = None):
     Auto-detects successful login and saves session for authenticated platforms only.
     
     Args:
-        platforms: List of platforms to login to (default: ["linkedin", "wellfound"])
+        platforms: List of platforms to login to (default: ["linkedin", "indeed"])
         user_id: User ID for database storage (if provided, saves to DB instead of file)
     """
     try:
         if platforms is None:
-            platforms = ["linkedin", "wellfound", "indeed"]
+            platforms = ["linkedin", "indeed"]
         
         logger.info(f"=== Starting authentication for user {user_id} ===")
         logger.info(f"Platforms: {platforms}")
@@ -264,14 +249,11 @@ async def run(platforms: list = None, user_id: str = None):
             if existing_session:
                 cookies = existing_session.get("cookies", [])
                 has_linkedin = any("linkedin" in c.get("domain", "").lower() for c in cookies)
-                has_wellfound = any("wellfound" in c.get("domain", "").lower() for c in cookies)
                 has_indeed = any("indeed" in c.get("domain", "").lower() for c in cookies)
                 
                 missing_platforms = []
                 if "linkedin" in platforms and not has_linkedin:
                     missing_platforms.append("linkedin")
-                if "wellfound" in platforms and not has_wellfound:
-                    missing_platforms.append("wellfound")
                 if "indeed" in platforms and not has_indeed:
                     missing_platforms.append("indeed")
                 
@@ -351,15 +333,6 @@ async def run(platforms: list = None, user_id: str = None):
                 authenticated["linkedin"] = False
                 logger.info("✓ LinkedIn page loaded")
 
-            if "wellfound" in platforms:
-                print("📖 Opening Wellfound login page...")
-                logger.info("Opening Wellfound login page")
-                page = await context.new_page()
-                await page.goto("https://wellfound.com/login", wait_until="load")
-                pages["wellfound"] = page
-                authenticated["wellfound"] = False
-                logger.info("✓ Wellfound page loaded")
-
             if "indeed" in platforms:
                 print("📖 Opening Indeed login page...")
                 logger.info("Opening Indeed login page")
@@ -387,13 +360,6 @@ async def run(platforms: list = None, user_id: str = None):
                         print("✅ LinkedIn: Successfully authenticated!")
                         logger.info("LinkedIn authentication detected")
                 
-                # Check Wellfound
-                if "wellfound" in pages and not authenticated["wellfound"]:
-                    if await check_wellfound_authenticated(pages["wellfound"]):
-                        authenticated["wellfound"] = True
-                        print("✅ Wellfound: Successfully authenticated!")
-                        logger.info("Wellfound authentication detected")
-
                 # Check Indeed
                 if "indeed" in pages and not authenticated["indeed"]:
                     if await check_indeed_authenticated(pages["indeed"]):
@@ -477,8 +443,8 @@ def main():
     try:
         logger.info("=== MAIN STARTED ===")
         parser = argparse.ArgumentParser(description="Authenticate with job platforms")
-        parser.add_argument("--platforms", nargs="+", default=["linkedin", "wellfound", "indeed"],
-                          choices=["linkedin", "wellfound", "indeed"])
+        parser.add_argument("--platforms", nargs="+", default=["linkedin", "indeed"],
+                          choices=["linkedin", "indeed"])
         parser.add_argument("--user-id", type=str, help="User ID for database storage")
         
         args = parser.parse_args()

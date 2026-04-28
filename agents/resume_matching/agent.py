@@ -365,7 +365,7 @@ async def _chunk_score_job(
     elif len(title_words) < 2:
         final_score *= 0.7  # relaxed from 0.5
         
-    _DEDICATED_PLATFORMS = {"linkedin", "indeed", "glassdoor", "wellfound", "reddit"}
+    _DEDICATED_PLATFORMS = {"linkedin", "indeed", "glassdoor", "reddit"}
     is_dedicated = job.source_platform in _DEDICATED_PLATFORMS
     
     if not job.description or len(job.description) < 50:

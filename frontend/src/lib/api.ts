@@ -177,7 +177,7 @@ export async function deleteSearchLink(linkId: string, token: string) {
   return res.json();
 }
 
-export async function triggerBrowserAuthentication(token: string, platforms: string[] = ["linkedin", "wellfound"]) {
+export async function triggerBrowserAuthentication(token: string, platforms: string[] = ["linkedin", "indeed"]) {
   const res = await fetch(`${API_URL}/scrapers/authenticate`, {
     method: "POST",
     headers: {
