@@ -2,8 +2,6 @@
 
 An intelligent job discovery platform powered by AI agents that finds, matches, ranks, and helps you reach out to relevant job opportunities personalized to your profile.
 
-**Status**: ✅ Production Ready | **Tech Stack**: Python, FastAPI, LangChain, PostgreSQL, Redis, Qdrant, React/Next.js
-
 ---
 
 ## 🎯 What It Does
