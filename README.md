@@ -1,4 +1,4 @@
-# 🤖 Agentic Job Finder
+# Scout AI: Multi Agent Job Search Platform 
 
 An intelligent job discovery platform powered by AI agents that finds, matches, ranks, and helps you reach out to relevant job opportunities personalized to your profile.
 
