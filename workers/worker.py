@@ -6,6 +6,8 @@ from celery import Celery
 from celery.signals import setup_logging
 from dotenv import load_dotenv
 
+from core.console import ColorFormatter
+
 @setup_logging.connect
 def config_loggers(*args, **kwargs):
     log_dir = Path("/app/data/logs")
@@ -14,9 +16,10 @@ def config_loggers(*args, **kwargs):
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter('[%(asctime)s: %(levelname)s/%(processName)s] %(name)s - %(message)s')
+    color_formatter = ColorFormatter()
     
     stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
+    stream_handler.setFormatter(color_formatter)
     
     file_handler = RotatingFileHandler(
         log_dir / "celery_pipeline.log", 

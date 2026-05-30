@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 import asyncio
 import logging
 
+from core.console import ColorFormatter
+
 from api.auth.router import router as auth_router
 from api.users.router import router as users_router
 from api.jobs.router import router as jobs_router
@@ -16,8 +18,11 @@ import os
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    handlers=[logging.StreamHandler()],
+    force=True,
 )
+for handler in logging.getLogger().handlers:
+    handler.setFormatter(ColorFormatter())
 logger = logging.getLogger(__name__)
 
 # Global scheduler instance

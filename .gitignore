@@ -35,3 +35,4 @@ project_architecture.png
 .env.backup
 backups/
 graphify-out/
+floci/

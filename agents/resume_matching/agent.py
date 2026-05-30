@@ -228,6 +228,7 @@ async def _stage1_chunk_filter(
 ) -> list[MatchedJob]:
     """Query resume_chunks for each job concurrently."""
     survivors: list[MatchedJob] = []
+    rejected: list[dict] = []
     semaphore = asyncio.Semaphore(10)
 
     async with get_qdrant_client(qdrant_cfg) as client:
@@ -246,14 +247,45 @@ async def _stage1_chunk_filter(
                     )
                     if result:
                         survivors.append(result)
+                    else:
+                        rejected.append({
+                            "title": job.title,
+                            "company": job.company,
+                            "platform": job.source_platform,
+                            "reason": "Below min_match_score threshold"
+                        })
+                        logger.warning(
+                            f"[stage_1] REJECTED: {job.title} @ {job.company} "
+                            f"({job.source_platform}) - Below score threshold"
+                        )
                 except Exception as e:
+                    rejected.append({
+                        "title": job.title,
+                        "company": job.company,
+                        "platform": job.source_platform,
+                        "error": str(e)
+                    })
                     logger.warning(f"[stage_1] Failed for {job.source_url}: {e}")
-
+        
         await asyncio.gather(*[filter_one(j) for j in jobs])
 
     survivors.sort(key=lambda j: j.match_score, reverse=True)
-    return survivors
+    
+    logger.info(f"[stage_1] ===== STAGE 1 RESULTS =====")
+    logger.info(f"[stage_1] Total input: {len(jobs)}")
+    logger.info(f"[stage_1] Passed filter: {len(survivors)}")
+    logger.info(f"[stage_1] Rejected: {len(rejected)}")
+    
+    if rejected:
+        logger.warning(f"[stage_1] Rejected jobs by platform:")
+        platform_rejects = {}
+        for r in rejected:
+            p = r.get("platform", "unknown")
+            platform_rejects[p] = platform_rejects.get(p, 0) + 1
+        for platform, count in platform_rejects.items():
+            logger.warning(f"  - {platform}: {count} jobs")
 
+    return survivors
 
 async def _chunk_score_job(
     job: Job,
@@ -277,19 +309,26 @@ async def _chunk_score_job(
     elif resume_ids:
         search_resume_ids = list(dict.fromkeys([rid for rid in resume_ids if rid]))
 
+    logger.info(f"[stage_1] Processing: '{job.title}' @ {job.company} ({job.source_platform})")
+    logger.info(f"[stage_1] Resume IDs to match: {search_resume_ids or 'ALL'}")
+    
     if search_resume_ids:
         resume_scores: list[tuple[str, int, int, float, float, list[dict], list[str]]] = []
         for rid in search_resume_ids:
+            logger.debug(f"[stage_1] Querying Qdrant for resume: {rid}")
             rid_chunks = await qdrant_find(
                 client=client,
-                collection_name=qdrant_cfg.collection_name,
+                collection_name=qdrant_cfg.collection_name or "resume_chunks",
                 query_embedding=query_embedding,
                 user_id=user_id,
                 resume_id=rid,
                 top_k=cfg.top_k_chunks,
             )
             if not rid_chunks:
+                logger.warning(f"[stage_1] No chunks found for resume {rid}")
                 continue
+            
+            logger.info(f"[stage_1] Found {len(rid_chunks)} chunks for {rid}")
             high_count, strong_count, rid_chunk_score, rid_vote_score = _score_resume_chunks_for_vote(rid_chunks, cfg)
 
             rid_matched_text = " ".join(
@@ -319,16 +358,20 @@ async def _chunk_score_job(
             f"(high_chunks={high_count}, strong_chunks={strong_count}, score={final_score:.4f})"
         )
     else:
+        logger.warning(f"[stage_1] No resume_ids provided - searching all resumes for user")
         chunks = await qdrant_find(
             client=client,
-            collection_name=qdrant_cfg.collection_name,
+            collection_name=qdrant_cfg.collection_name or "resume_chunks",
             query_embedding=query_embedding,
             user_id=user_id,
             resume_id=None,
             top_k=max(cfg.top_k_chunks, 20),
         )
         if not chunks:
+            logger.warning(f"[stage_1] No chunks found across any resume for job")
             return None
+
+        logger.info(f"[stage_1] Found {len(chunks)} chunks across all resumes")
 
         from collections import defaultdict
         by_resume: dict[str, list[dict]] = defaultdict(list)
@@ -376,6 +419,11 @@ async def _chunk_score_job(
             logger.info(f"[scoring] PENALTY: Extremely short description on generic platform")
             final_score *= 0.8
 
+    logger.info(
+        f"[stage_1] {job.source_platform.upper():15} | '{job.title}' @ {job.company} "
+        f"| chunk_score={chunk_score:.4f} → final_score={final_score:.4f} "
+        f"| threshold={cfg.min_match_score:.4f} | {'✓ PASS' if final_score >= cfg.min_match_score else '✗ REJECT'}"
+    )
 
     if final_score < cfg.min_match_score:
         return None
@@ -424,7 +472,7 @@ async def _stage2_rerank(
 
                     results = await qdrant_find(
                         client=client,
-                        collection_name=qdrant_cfg.full_resume_collection,
+                        collection_name=qdrant_cfg.full_resume_collection or "resume_full",
                         query_embedding=query_embedding,
                         user_id=user_id,
                         resume_id=job.resume_id,
@@ -467,7 +515,7 @@ def _aggregate_chunk_scores(chunks: list[dict]) -> tuple[float, str]:
         rid = metadata.get("resume_id", "default")
         resumes[rid].append(c)
 
-    resume_results = {}
+    resume_results: dict[str, float] = {}
     for rid, resume_chunks in resumes.items():
         resume_chunks.sort(key=lambda x: x.get("score", 0.0), reverse=True)
         
@@ -496,7 +544,10 @@ def _aggregate_chunk_scores(chunks: list[dict]) -> tuple[float, str]:
     for rid, score in sorted(resume_results.items(), key=lambda x: x[1], reverse=True):
         logger.info(f"      - {rid}: {score:.4f}")
 
-    winning_resume_id = max(resume_results, key=resume_results.get)
+    if not resume_results:
+        return 0.0, ""
+
+    winning_resume_id = max(resume_results, key=lambda k: resume_results[k])
     winning_score = resume_results[winning_resume_id]
     
     logger.info(f"  - Winner: {winning_resume_id} (score={winning_score:.3f})")

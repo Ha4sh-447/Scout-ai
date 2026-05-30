@@ -15,10 +15,12 @@ import {
 import { fetchJobs, fetchSettings, triggerPipeline, scrapeLinks, cancelPipeline, updateSettings, fetchRuns, uploadResume, saveSearchLinks, getSearchLinks, deleteSearchLink, triggerBrowserAuthentication, getAuthenticationStatus, clearBrowserSession, fetchResumes, updateLinkedinCookie } from "@/lib/api";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
+import { useToastNotification } from "@/lib/toast";
 import PipelineHistory from "@/components/PipelineHistory";
 
 export default function Dashboard() {
   const { data: session, status } = useSession();
+  const toast = useToastNotification();
   const [activeTab, setActiveTab] = useState("overview");
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -128,8 +130,9 @@ export default function Dashboard() {
   const handleTrigger = async () => {
     const token = (session as any)?.user?.accessToken || "";
     
+    // Check if user has uploaded at least one resume
     if (uploadedResumes.length === 0) {
-      alert("Please upload at least one resume before starting a pipeline.");
+      toast.warning("Please upload at least one resume before starting a pipeline.");
       setActiveTab("resumes");
       return;
     }
@@ -165,8 +168,20 @@ export default function Dashboard() {
           is_scheduled: enableScheduler,
           interval_hours: schedulerInterval
         });
-        alert(`Scraper started for the provided links!${enableScheduler ? ` Scheduled every ${schedulerInterval}h` : ""}`);
+        toast.success(`Scraper started for the provided links!${enableScheduler ? ` Scheduled every ${schedulerInterval}h` : ""}`)
       } else {
+        // Check if user has search queries configured (either from preferences or entered in search field)
+        const savedSearchQueries = rawSettings?.search_queries || [];
+        const hasSearchQueries = searchQuery.trim().length > 0 || (Array.isArray(savedSearchQueries) && savedSearchQueries.length > 0);
+        
+        if (!hasSearchQueries) {
+          toast.warning("Please add at least one search query in your Preferences before starting a pipeline.");
+          setIsSettingsOpen(true);
+          setIsTriggerDialogOpen(false);
+          setTriggering(false);
+          return;
+        }
+        
         console.log("[Dashboard] Calling triggerPipeline with:");
         console.log("  - queries:", [searchQuery]);
         console.log("  - location:", location || undefined);
@@ -184,7 +199,7 @@ export default function Dashboard() {
         }, token);
         
         console.log("[Dashboard] triggerPipeline response:", res);
-        alert(`Custom agent run triggered!${enableScheduler ? ` Scheduled every ${schedulerInterval}h` : ""}`);
+        toast.success(`Custom agent run triggered!${enableScheduler ? ` Scheduled every ${schedulerInterval}h` : ""}`)
       }
       
       if (res?.run_id) setActiveRunId(res.run_id);
@@ -197,7 +212,7 @@ export default function Dashboard() {
       
       loadData(true); // Silent refresh after trigger
     } catch (error) {
-      alert("Failed to start agent: " + (error as Error).message);
+      toast.error("Failed to start agent: " + (error as Error).message);
     } finally {
       setTriggering(false);
     }
@@ -228,15 +243,15 @@ export default function Dashboard() {
           setLiAtCookie(""); // Clear after saving
         } catch(err) {
           console.error("Failed to update linkedin cookie", err);
-          alert("Settings saved, but failed to link LinkedIn session.");
+          toast.warning("Settings saved, but failed to link LinkedIn session.");
         }
       }
       
-      alert("Settings & Session saved!");
+      toast.success("Settings & Session saved!");
       setIsSettingsOpen(false);
       loadData(true); // Silent refresh
     } catch (error) {
-      alert("Failed to save settings.");
+      toast.error("Failed to save settings.");
     }
   };
 
@@ -457,7 +472,7 @@ export default function Dashboard() {
                    {" "} Scout AI
                  </span>
                  <h2 className="text-2xl font-black text-white mb-2">
-                   Welcome, {session?.user?.name?.split(" ")[0] || "Scout"} 👋
+                   Welcome to ScoutAI
                  </h2>
                  <p className="text-slate-400 text-sm max-w-xl">
                    Follow the setup checklist below to get the most out of Scout AI. Once configured, your agent will run automatically and deliver curated job matches to your inbox.
@@ -604,15 +619,24 @@ export default function Dashboard() {
                    </button>
                    <button
                      onClick={async () => {
-                       if (uploadedResumes.length === 0) { alert("Please upload at least one resume first."); setActiveTab("resumes"); return; }
+                       if (uploadedResumes.length === 0) { toast.warning("Please upload at least one resume first."); setActiveTab("resumes"); return; }
+                       
+                       // Check if user has search queries configured
+                       const savedSearchQueries = rawSettings?.search_queries || [];
+                       if (!Array.isArray(savedSearchQueries) || savedSearchQueries.length === 0) {
+                         toast.warning("Please add at least one search query in your Preferences before starting a pipeline.");
+                         handleOpenSettings();
+                         return;
+                       }
+                       
                        const token = (session as any)?.user?.accessToken || "";
                        try {
                          setTriggering(true);
                          const res = await triggerPipeline({}, token);
                          if (res?.run_id) setActiveRunId(res.run_id);
                          await loadData(true);
-                         alert("Pipeline triggered! Check Pipeline History for status.");
-                       } catch (err) { alert("Failed: " + (err as Error).message); } finally { setTriggering(false); }
+                         toast.success("Pipeline triggered! Check Pipeline History for status.");
+                       } catch (err) { toast.error("Failed: " + (err as Error).message); } finally { setTriggering(false); }
                      }}
                      disabled={triggering || activeRunId !== null}
                      className="p-4 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl flex items-center gap-3 transition-all text-left"
@@ -667,7 +691,7 @@ export default function Dashboard() {
                    <button
                      onClick={async () => {
                        if (!resumeFile) {
-                         alert("Please select a PDF file first");
+                         toast.warning("Please select a PDF file first");
                          return;
                        }
                        const token = (session as any)?.user?.accessToken || "";
@@ -678,10 +702,10 @@ export default function Dashboard() {
                          const resumesData = await fetchResumes(token);
                          setUploadedResumes(resumesData);
                          
-                         alert("Resume uploaded and processed successfully!");
+                         toast.success("Resume uploaded and processed successfully!");
                          setResumeFile(null);
                        } catch (error) {
-                         alert("Failed to upload resume: " + (error as Error).message);
+                         toast.error("Failed to upload resume: " + (error as Error).message);
                        } finally {
                          setUploading(false);
                        }
@@ -730,9 +754,9 @@ export default function Dashboard() {
                      const token = (session as any)?.user?.accessToken || "";
                      try {
                        await updateSettings({resume_summary: rawSettings?.resume_summary}, token);
-                       alert("Resume summary updated!");
+                       toast.success("Resume summary updated!");
                      } catch (error) {
-                       alert("Failed to update: " + (error as Error).message);
+                       toast.error("Failed to update: " + (error as Error).message);
                      }
                    }}
                    className="px-6 py-2 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-colors"
@@ -763,12 +787,12 @@ export default function Dashboard() {
                            const statusData = await getAuthenticationStatus(token);
                            setAuthStatus(statusData);
                            if (statusData?.authenticated) {
-                             alert("✓ Session found and loaded!");
+                             toast.success("✓ Session found and loaded!");
                            } else {
-                             alert("No saved session found. Click 'Authenticate' to log in.");
+                             toast.info("No saved session found. Click 'Authenticate' to log in.");
                            }
                          } catch (error) {
-                           alert("Failed to check status");
+                           toast.error("Failed to check status");
                          }
                        }}
                        className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-xs font-semibold rounded-lg transition-colors"
@@ -874,10 +898,10 @@ export default function Dashboard() {
                          const token = (session as any)?.user?.accessToken || "";
                          try {
                            const result = await clearBrowserSession(token);
-                           alert(result.message);
+                           toast.success(result.message);
                            await loadData(true);
                          } catch (error) {
-                           alert("Failed to clear session: " + (error as Error).message);
+                           toast.error("Failed to clear session: " + (error as Error).message);
                          }
                        }}
                        className="w-full px-6 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm font-semibold rounded-xl border border-red-500/20 transition-colors"
@@ -908,16 +932,16 @@ export default function Dashboard() {
                      const token = (session as any)?.user?.accessToken || "";
                      const urlList = customUrls.split("\n").map(u => u.trim()).filter(u => u.length > 0);
                      if (urlList.length === 0) {
-                       alert("Please paste at least one URL");
+                       toast.warning("Please paste at least one URL");
                        return;
                      }
                      try {
                        const result = await saveSearchLinks(urlList, token);
-                       alert(result.message);
+                       toast.success(result.message);
                        setCustomUrls("");
                        await loadData(true);
                      } catch (error) {
-                       alert("Failed to save links: " + (error as Error).message);
+                       toast.error("Failed to save links: " + (error as Error).message);
                      }
                    }}
                    className="px-6 py-3 bg-emerald-500 text-white font-semibold rounded-xl hover:bg-emerald-600 transition-colors"
@@ -949,10 +973,10 @@ export default function Dashboard() {
                              const token = (session as any)?.user?.accessToken || "";
                              try {
                                await deleteSearchLink(link.id, token);
-                               alert("Search URL removed");
+                               toast.success("Search URL removed");
                                await loadData(true);
                              } catch (error) {
-                               alert("Failed to delete: " + (error as Error).message);
+                               toast.error("Failed to delete: " + (error as Error).message);
                              }
                            }}
                            className="px-3 py-2 text-red-400 hover:bg-red-500/10 rounded-lg border border-red-500/20 transition-colors text-sm font-medium"
@@ -1207,9 +1231,41 @@ export default function Dashboard() {
                      </p>
                    </div>
 
+                   {/* Validation Checklist */}
+                   <div className="space-y-2 bg-slate-900/50 border border-slate-800 rounded-xl p-4">
+                     <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Prerequisites</p>
+                     <div className="space-y-2">
+                       <div className="flex items-center gap-2">
+                         {uploadedResumes.length > 0 ? (
+                           <CheckCircle size={16} className="text-emerald-500 flex-shrink-0" />
+                         ) : (
+                           <AlertTriangle size={16} className="text-red-500 flex-shrink-0" />
+                         )}
+                         <span className={`text-xs ${uploadedResumes.length > 0 ? "text-emerald-400" : "text-red-400"}`}>
+                           Resume uploaded ({uploadedResumes.length})
+                         </span>
+                       </div>
+                       <div className="flex items-center gap-2">
+                         {rawSettings?.search_queries && Array.isArray(rawSettings.search_queries) && rawSettings.search_queries.length > 0 ? (
+                           <CheckCircle size={16} className="text-emerald-500 flex-shrink-0" />
+                         ) : (
+                           <AlertTriangle size={16} className="text-red-500 flex-shrink-0" />
+                         )}
+                         <span className={`text-xs ${rawSettings?.search_queries && Array.isArray(rawSettings.search_queries) && rawSettings.search_queries.length > 0 ? "text-emerald-400" : "text-red-400"}`}>
+                           Search queries in preferences ({rawSettings?.search_queries?.length || 0})
+                         </span>
+                       </div>
+                     </div>
+                   </div>
+
                    <div className="pt-4 flex justify-end gap-4">
                       <button type="button" onClick={() => setIsTriggerDialogOpen(false)} className="px-6 py-2 text-sm font-bold text-slate-400 hover:text-white transition-colors">Cancel</button>
-                      <button type="button" onClick={handleTrigger} disabled={triggering} className="px-8 py-2 bg-emerald-500 text-black font-black rounded-xl text-sm hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/10 disabled:opacity-50">
+                      <button 
+                        type="button" 
+                        onClick={handleTrigger} 
+                        disabled={triggering || uploadedResumes.length === 0 || !rawSettings?.search_queries || rawSettings.search_queries.length === 0}
+                        className="px-8 py-2 bg-emerald-500 text-black font-black rounded-xl text-sm hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
                         {triggering ? "Starting..." : "Start Pipeline"}
                       </button>
                    </div>

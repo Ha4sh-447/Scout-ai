@@ -17,6 +17,8 @@ import argparse
 from urllib.parse import urlparse, urlunparse
 from dotenv import load_dotenv
 
+from core.console import color_text, print_status
+
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
@@ -100,7 +102,7 @@ def reset_database(force=False):
     try:
         from sqlalchemy import create_engine, text, inspect
 
-        print("[RESET] Resetting PostgreSQL database...")
+        print_status("RESET", "Resetting PostgreSQL database...", "blue")
         engine = None
 
         # Try Docker hostnames first, then localhost fallbacks.
@@ -109,16 +111,16 @@ def reset_database(force=False):
                 engine = create_engine(candidate)
                 with engine.connect() as conn:
                     conn.execute(text("SELECT 1"))
-                print(f"   [OK] Connected using: {candidate}")
+                print_status("OK", f"Connected using: {candidate}", "green")
                 break
             except Exception as e:
-                print(f"   [WARN] DB connection failed for {candidate}: {e}")
+                print_status("WARN", f"DB connection failed for {candidate}: {e}", "yellow")
                 if engine is not None:
                     engine.dispose()
                 engine = None
 
         if engine is None:
-            print("[FAILED] Database reset failed: Could not connect to PostgreSQL using any configured endpoint")
+            print_status("FAILED", "Database reset failed: Could not connect to PostgreSQL using any configured endpoint", "red")
             return False
         
         # Get list of tables
@@ -126,28 +128,28 @@ def reset_database(force=False):
         tables = inspector.get_table_names()
         
         if tables:
-            print(f"   Found {len(tables)} tables:")
+            print(color_text(f"   Found {len(tables)} tables:", "blue"))
             for table in tables:
-                print(f"     - {table}")
+                print(color_text(f"     - {table}", "blue"))
             
             if not force:
-                confirm = input("\n   [WARNING] Delete all table records? (yes/no): ")
+                confirm = input(color_text("\n   [WARNING] Delete all table records? (yes/no): ", "yellow"))
                 if confirm.lower() != "yes":
-                    print("   Cancelled.")
+                    print(color_text("   Cancelled.", "yellow"))
                     return False
         
         # Truncate all tables and reset identities while preserving schema.
         with engine.begin() as connection:
             for table in reversed(tables):
                 connection.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
-                print(f"   [OK] Cleared table: {table}")
+                print_status("OK", f"Cleared table: {table}", "green")
         
-        print("[OK] Database records cleared (schema preserved)")
+        print_status("OK", "Database records cleared (schema preserved)", "green")
         engine.dispose()
         return True
         
     except Exception as e:
-        print(f"[FAILED] Database reset failed: {e}")
+        print_status("FAILED", f"Database reset failed: {e}", "red")
         return False
 
 def reset_redis(force=False):
@@ -155,7 +157,7 @@ def reset_redis(force=False):
     try:
         import redis
         
-        print("[RESET] Resetting Redis...")
+        print_status("RESET", "Resetting Redis...", "blue")
 
         client = None
         for candidate in _build_redis_url_candidates():
@@ -163,36 +165,36 @@ def reset_redis(force=False):
                 test_client = redis.from_url(candidate)
                 test_client.ping()
                 client = test_client
-                print(f"   [OK] Connected using: {candidate}")
+                print_status("OK", f"Connected using: {candidate}", "green")
                 break
             except Exception as e:
-                print(f"   [WARN] Redis connection failed for {candidate}: {e}")
+                print_status("WARN", f"Redis connection failed for {candidate}: {e}", "yellow")
 
         if client is None:
-            print("[FAILED] Redis reset failed: Could not connect to Redis using any configured endpoint")
-            print("   Make sure Redis is running: docker-compose ps redis")
+            print_status("FAILED", "Redis reset failed: Could not connect to Redis using any configured endpoint", "red")
+            print(color_text("   Make sure Redis is running: docker-compose ps redis", "red"))
             return False
         
         # Get DB size
         db_size = client.dbsize()
-        print(f"   Found {db_size} keys in Redis")
+        print(color_text(f"   Found {db_size} keys in Redis", "blue"))
         
         if db_size > 0:
             if not force:
-                confirm = input("   [WARNING] Flush all Redis data? (yes/no): ")
+                confirm = input(color_text("   [WARNING] Flush all Redis data? (yes/no): ", "yellow"))
                 if confirm.lower() != "yes":
-                    print("   Cancelled.")
+                    print(color_text("   Cancelled.", "yellow"))
                     return False
             
             client.flushdb()
-            print("   [OK] Redis flushed")
+            print_status("OK", "Redis flushed", "green")
         
-        print("[OK] Redis reset complete")
+        print_status("OK", "Redis reset complete", "green")
         return True
         
     except Exception as e:
-        print(f"[FAILED] Redis reset failed: {e}")
-        print(f"   Make sure Redis is running: docker-compose ps redis")
+        print_status("FAILED", f"Redis reset failed: {e}", "red")
+        print(color_text("   Make sure Redis is running: docker-compose ps redis", "red"))
         return False
 
 def reset_qdrant(force=False):
@@ -201,7 +203,7 @@ def reset_qdrant(force=False):
         from qdrant_client import QdrantClient
         from qdrant_client import models
         
-        print("[RESET] Resetting Qdrant...")
+        print_status("RESET", "Resetting Qdrant...", "blue")
 
         client = None
         for candidate in _build_qdrant_url_candidates():
@@ -209,27 +211,27 @@ def reset_qdrant(force=False):
                 test_client = QdrantClient(url=candidate)
                 test_client.get_collections()
                 client = test_client
-                print(f"   [OK] Connected using: {candidate}")
+                print_status("OK", f"Connected using: {candidate}", "green")
                 break
             except Exception as e:
-                print(f"   [WARN] Qdrant connection failed for {candidate}: {e}")
+                print_status("WARN", f"Qdrant connection failed for {candidate}: {e}", "yellow")
 
         if client is None:
-            print("[FAILED] Qdrant reset failed: Could not connect to Qdrant using any configured endpoint")
-            print("   Make sure Qdrant is running: docker-compose ps qdrant")
+            print_status("FAILED", "Qdrant reset failed: Could not connect to Qdrant using any configured endpoint", "red")
+            print(color_text("   Make sure Qdrant is running: docker-compose ps qdrant", "red"))
             return False
 
         collections = client.get_collections().collections
         
         if collections:
-            print(f"   Found {len(collections)} collections:")
+            print(color_text(f"   Found {len(collections)} collections:", "blue"))
             for collection in collections:
-                print(f"     - {collection.name}")
+                print(color_text(f"     - {collection.name}", "blue"))
             
             if not force:
-                confirm = input("   [WARNING] Delete all points from all collections? (yes/no): ")
+                confirm = input(color_text("   [WARNING] Delete all points from all collections? (yes/no): ", "yellow"))
                 if confirm.lower() != "yes":
-                    print("   Cancelled.")
+                    print(color_text("   Cancelled.", "yellow"))
                     return False
             
             for collection in collections:
@@ -240,17 +242,17 @@ def reset_qdrant(force=False):
                         points_selector=models.Filter(must=[]),
                         wait=True,
                     )
-                    print(f"   [OK] Cleared points in collection: {collection.name}")
+                    print_status("OK", f"Cleared points in collection: {collection.name}", "green")
                 except Exception as e:
-                    print(f"   [WARN] Could not clear collection {collection.name}: {e}")
+                    print_status("WARN", f"Could not clear collection {collection.name}: {e}", "yellow")
                     raise
         
-        print("[OK] Qdrant points cleared (collections preserved)")
+        print_status("OK", "Qdrant points cleared (collections preserved)", "green")
         return True
         
     except Exception as e:
-        print(f"[FAILED] Qdrant reset failed: {e}")
-        print(f"   Make sure Qdrant is running: docker-compose ps qdrant")
+        print_status("FAILED", f"Qdrant reset failed: {e}", "red")
+        print(color_text("   Make sure Qdrant is running: docker-compose ps qdrant", "red"))
         return False
 
 def main():
@@ -263,18 +265,18 @@ def main():
     args = parser.parse_args()
     
     print("=" * 60)
-    print("SYSTEM RESET")
+    print(color_text("SYSTEM RESET", "blue"))
     print("=" * 60)
-    print("[WARNING] WARNING: This will DELETE all system records!")
-    print("   - Database table records (schema preserved)")
-    print("   - Redis cache")
-    print("   - Qdrant points (collections preserved)")
+    print(color_text("[WARNING] WARNING: This will DELETE all system records!", "yellow"))
+    print(color_text("   - Database table records (schema preserved)", "yellow"))
+    print(color_text("   - Redis cache", "yellow"))
+    print(color_text("   - Qdrant points (collections preserved)", "yellow"))
     print("="*60)
     
     if not args.force:
-        confirm = input("\n[CONFIRM] Are you SURE? (type 'reset' to confirm): ")
+        confirm = input(color_text("\n[CONFIRM] Are you SURE? (type 'reset' to confirm): ", "yellow"))
         if confirm != "reset":
-            print("Cancelled.")
+            print(color_text("Cancelled.", "yellow"))
             sys.exit(0)
     
     results = {
@@ -327,7 +329,7 @@ def main():
         print("   Now run: python scripts/init_db.py")
         sys.exit(0)
     else:
-        print("\n❌ Some resets failed. Check errors above.")
+        print_status("FAILED", "Some resets failed. Check errors above.", "red")
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -134,6 +134,7 @@ async def trigger_pipeline(
     
     logger = logging.getLogger(__name__)
     
+    # Check if user has at least one active resume
     resume_result = await db.execute(
         select(UserResume).where(
             UserResume.user_id == current_user.id,
@@ -145,6 +146,19 @@ async def trigger_pipeline(
             status_code=400,
             detail="Please upload at least one resume before starting a pipeline."
         )
+    
+    # Check if user has search queries configured (unless custom URLs are provided)
+    if not body.urls or len(body.urls) == 0:
+        settings_result = await db.execute(
+            select(UserSettings).where(UserSettings.user_id == current_user.id)
+        )
+        settings = settings_result.scalar_one_or_none()
+        
+        if not settings or not settings.search_queries or len(settings.search_queries) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Please add at least one search query in your Preferences before starting a pipeline."
+            )
     
     logger.info(f"[trigger_pipeline] Pipeline triggered: is_scheduled={body.is_scheduled}, interval_hours={body.interval_hours}")
 

@@ -238,7 +238,7 @@ async def load_job_pages(
                 all_errors.extend(errors)
                 if errors:
                     for e in errors:
-                        logger.warning(f"[page_loader] ⚠️ {platform} scrape issue: {e}")
+                        logger.warning(f"[page_loader] {platform} scrape issue: {e}")
                 if not raw_jobs:
                     continue
                     
@@ -275,7 +275,7 @@ async def load_job_pages(
 
         except Exception as e:
             all_errors.append(f"Scraper failed for {url}: {e}")
-            logger.error(f"[page_loader] ❌ Error scraping {platform} ({url}): {e}", exc_info=True)
+            logger.error(f"[page_loader] Error scraping {platform} ({url}): {e}", exc_info=True)
 
         if i < len(urls) - 1:
             delay = random.uniform(*config.url_delay_range)

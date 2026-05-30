@@ -17,29 +17,18 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
-try:
-    import colorama
-    colorama.init(autoreset=True)
-    C = {
-        "blue":   colorama.Fore.BLUE,
-        "green":  colorama.Fore.GREEN,
-        "yellow": colorama.Fore.YELLOW,
-        "red":    colorama.Fore.RED,
-        "reset":  colorama.Style.RESET_ALL,
-    }
-except ImportError:
-    C = {k: "" for k in ("blue", "green", "yellow", "red", "reset")}
+from core.console import color_text, colored_label, status_line
 
 
 def _c(color: str, text: str) -> str:
-    return f"{C[color]}{text}{C['reset']}"
+    return color_text(text, color)
 
 
-def info(msg: str):    print(_c("blue",   f"[INFO]    {msg}"))
-def ok(msg: str):      print(_c("green",  f"[  OK  ]  {msg}"))
-def warn(msg: str):    print(_c("yellow", f"[ WARN ]  {msg}"))
-def error(msg: str):   print(_c("red",    f"[ERROR]   {msg}"))
-def header(msg: str):  print(_c("blue",   f"\n{'─'*50}\n  {msg}\n{'─'*50}"))
+def info(msg: str):    print(status_line("INFO", msg, "blue"))
+def ok(msg: str):      print(status_line("OK", msg, "green"))
+def warn(msg: str):    print(status_line("WARN", msg, "yellow"))
+def error(msg: str):   print(status_line("ERROR", msg, "red"))
+def header(msg: str):  print(color_text(f"\n{'─'*50}\n  {msg}\n{'─'*50}", "blue"))
 
 IS_WINDOWS = platform.system() == "Windows"
 IS_MACOS   = platform.system() == "Darwin"
@@ -631,7 +620,7 @@ def print_summary(setup_mode: str, docker_started: bool):
     width = 46
     print()
     print(_c("green", f"╔{'═'*width}╗"))
-    label = "✅  Setup Complete!"
+    label = "Setup Complete!"
     padding = (width - (len(label) + 1)) // 2
     print(_c("green", f"║{' '*padding}{label}{' '*(width - 19 - padding)}║"))
     print(_c("green", f"╚{'═'*width}╝"))

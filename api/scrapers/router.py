@@ -70,8 +70,8 @@ async def trigger_browser_authentication(
                 "3. The script will auto-detect successful login and save your session",
                 "4. The browser will close automatically after authentication",
                 "5. Check back here shortly - you'll see the status updated",
-                "💡 For Indeed, once you reach the job search or account page, it will be detected.",
-                "📌 This only needs to be done ONCE. Future runs will reuse this session."
+                "For Indeed, once you reach the job search or account page, it will be detected.",
+                "This only needs to be done ONCE. Future runs will reuse this session."
             ]
         }
     except Exception as e:

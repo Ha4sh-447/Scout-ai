@@ -54,7 +54,7 @@ class MistralConfig(BaseModel):
 
 class ResumeMatchingConfig(BaseModel):
     min_match_score: float = Field(
-        default=0.45, description="Jobs below this chunk-based score are dropped"
+        default=0.35, description="Jobs below this chunk-based score are dropped"
     )
     top_k_chunks: int = Field(
         default=5, description="Number of resume chunks to retrieve"

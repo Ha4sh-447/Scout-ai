@@ -76,7 +76,7 @@ async def _recover_scheduled_pipelines():
             
             if elapsed_hours >= interval_hours:
                 logger.info(
-                    f"[Scheduler] Recovery: 🚀 Pipeline {run.id} is due for reschedule "
+                    f"[Scheduler] Recovery: Pipeline {run.id} is due for reschedule "
                     f"(elapsed {elapsed_hours:.1f}h >= interval {interval_hours}h)"
                 )
                 
@@ -143,7 +143,7 @@ async def _check_and_reschedule_pipelines():
             logger.info(f"[Scheduler] Pipeline {run.id} (user: {run.user_id}) - Interval: {run.interval_hours}h, Next execution: {next_execution.isoformat()}, Time until next: {time_until_next}")
             
             if next_execution <= datetime.utcnow():
-                logger.info(f"[Scheduler] 🚀 Rescheduling pipeline {run.id} for user {run.user_id} (execution #{run.execution_count + 1})")
+                logger.info(f"[Scheduler] Rescheduling pipeline {run.id} for user {run.user_id} (execution #{run.execution_count + 1})")
                 
                 try:
                     await purge_user_tasks(db, run.user_id)

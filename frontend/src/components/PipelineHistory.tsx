@@ -7,6 +7,7 @@ import {
   TrendingUp, Users, Briefcase, Activity, X, Mail, Zap
 } from "lucide-react";
 import { fetchRunDetails, cancelPipeline } from "@/lib/api";
+import { useToastNotification } from "@/lib/toast";
 
 interface PipelineRun {
   id: string;
@@ -35,6 +36,7 @@ interface PipelineHistoryProps {
 }
 
 export default function PipelineHistory({ runs, token, activeRunId, onRunCancelled }: PipelineHistoryProps) {
+  const toast = useToastNotification();
   const [expandedRun, setExpandedRun] = useState<string | null>(activeRunId || null);
   const [runDetails, setRunDetails] = useState<{ [key: string]: PipelineRun }>({});
   const [pollingRunIds, setPollingRunIds] = useState<Set<string>>(new Set());
@@ -234,7 +236,7 @@ export default function PipelineHistory({ runs, token, activeRunId, onRunCancell
       await cancelPipeline(runId, token);
       if (onRunCancelled) onRunCancelled();
     } catch (error) {
-      alert("Failed to cancel pipeline: " + (error as Error).message);
+      toast.error("Failed to cancel pipeline: " + (error as Error).message);
     } finally {
       setCancelingRunId(null);
     }

@@ -46,12 +46,12 @@ def _make_engine():
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=60)
 def run_pipeline_task(self, run_id: str, user_id: str, custom_urls: list[str] = None):
     """Synchronous Celery entry point - runs the async pipeline in a new event loop."""
-    logger.info(f"[task] ⏱️ CELERY TASK STARTED - run_id={run_id}, user_id={user_id}, custom_urls={custom_urls is not None}")
+    logger.info(f"[task] CELERY TASK STARTED - run_id={run_id}, user_id={user_id}, custom_urls={custom_urls is not None}")
     try:
         asyncio.run(_run_pipeline(run_id, user_id, custom_urls=custom_urls))
-        logger.info(f"[task] ✅ CELERY TASK COMPLETED - run_id={run_id}")
+        logger.info(f"[task] CELERY TASK COMPLETED - run_id={run_id}")
     except Exception as exc:
-        logger.error(f"[task] ❌ Pipeline failed for user {user_id}: {exc}", exc_info=True)
+        logger.error(f"[task] Pipeline failed for user {user_id}: {exc}", exc_info=True)
         loop = asyncio.new_event_loop()
         try:
             loop.run_until_complete(_mark_run_failed(run_id, str(exc)))
@@ -66,7 +66,7 @@ async def _run_pipeline(run_id: str, user_id: str, custom_urls: list[str] = None
 
     try:
         async with SessionLocal() as db:
-            logger.info(f"[pipeline] 🔄 PIPELINE STARTED for run {run_id} (user {user_id})")
+            logger.info(f"[pipeline] PIPELINE STARTED for run {run_id} (user {user_id})")
             
             user_result = await db.execute(select(User).where(User.id == user_id))
             user = user_result.scalar_one_or_none()

@@ -55,14 +55,14 @@ async def scrape_node(state: JobDiscoveryState) -> dict:
     if has_session and not raw_jobs and errors:
         session_errors = [e for e in errors if "REDIRECT" in e.upper() or "ERR_" in e.upper() or "timeout" in e.lower()]
         if session_errors:
-            logger.warning(f"[scrapper node] ⚠️ Scraping FAILED with stored session ({len(errors)} errors). Retrying in GUEST mode...")
+            logger.warning(f"[scrapper node] Scraping failed with stored session ({len(errors)} errors). Retrying in guest mode...")
             async with BrowserManager(headless=True, storage_state=None) as bm_guest:
                 raw_jobs, guest_errors = await load_job_pages(
                     bm_guest, state["urls"], search_queries=search_queries, config=config,
                     freshness=freshness, platforms=platforms, location=location
                 )
             if raw_jobs:
-                logger.info(f"[scrapper node] ✅ Guest mode fallback succeeded: {len(raw_jobs)} jobs scraped")
+                logger.info(f"[scrapper node] Guest mode fallback succeeded: {len(raw_jobs)} jobs scraped")
                 errors = guest_errors
             else:
                 logger.warning(f"[scrapper node] Guest mode also failed with {len(guest_errors)} errors")
@@ -136,7 +136,7 @@ async def parse_node(state: JobDiscoveryState) -> dict:
     raw_jobs_to_parse = new_raw_jobs
     if dev_mode and len(new_raw_jobs) > 3:
         raw_jobs_to_parse = new_raw_jobs[:3]
-        logger.warning(f"⚠️ DEVELOPMENT MODE: Limiting LLM parsing to {len(raw_jobs_to_parse)} jobs (skipping {len(new_raw_jobs) - len(raw_jobs_to_parse)} jobs)")
+        logger.warning(f"DEVELOPMENT MODE: Limiting LLM parsing to {len(raw_jobs_to_parse)} jobs (skipping {len(new_raw_jobs) - len(raw_jobs_to_parse)} jobs)")
 
     logger.info(f"[parse node] Sending {len(raw_jobs_to_parse)} new jobs to LLM for parsing...")
     parsed_jobs, errors = await parse_jobs_batch(raw_jobs_to_parse)
